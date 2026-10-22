@@ -124,8 +124,8 @@ describe('Audit logs (e2e)', () => {
     });
   });
 
-  it('keeps verifying the chain across rows hashed with the old formula', async () => {
-    const { accessToken, workspaceId } = await setup();
+  it('verifies a chain of an old-formula row and version 2 rows with multi-key metadata', async () => {
+    const { accessToken, workspaceId, staffRoleId } = await setup();
     const prisma = getPrisma();
     const workspace = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
     await prisma.auditLog.deleteMany();
@@ -171,16 +171,38 @@ describe('Audit logs (e2e)', () => {
       },
     });
 
-    // Chained without metadata: rows with multi-key metadata fail verification for an unrelated,
-    // inherited reason (JSONB reorders keys), reported in the PR.
+    // Version 2 rows with multi-key, nested metadata: JSONB hands the keys back in another order.
     const { AuditService } =
       require('../src/modules/audit/services/audit.service') as typeof import('../src/modules/audit/services/audit.service');
+    const metadata = {
+      zeta: 1,
+      alpha: { method: 'POST', path: '/x', list: [{ b: 2, a: 1 }] },
+      mid: 'm',
+    };
     await app.get(AuditService).log({
       action: 'chained.event',
       workspaceId,
       organizationId: workspace.organizationId,
       clientId: 'client-a',
+      metadata,
     });
+    await request(server)
+      .post('/api/v1/users')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-workspace-id', workspaceId)
+      .send({
+        email: 'chained@example.com',
+        name: 'Chained',
+        password: 'StrongPass@123',
+        roleId: staffRoleId,
+      })
+      .expect(201);
+
+    const stored = await prisma.auditLog.findFirstOrThrow({ where: { action: 'chained.event' } });
+    expect(stored.metadata).toEqual(metadata);
+    expect(Object.keys(stored.metadata as object)).not.toEqual(Object.keys(metadata));
+    const created = await prisma.auditLog.findFirstOrThrow({ where: { action: 'user.created' } });
+    expect(Object.keys(created.metadata as object).length).toBeGreaterThan(1);
     const owner = await prisma.user.findUniqueOrThrow({ where: { email: 'owner@example.com' } });
     await provisionSuperAdmin(owner.id);
 
@@ -191,7 +213,7 @@ describe('Audit logs (e2e)', () => {
       .expect(200);
 
     expect(res.body).toMatchObject({ valid: true, reason: 'ok' });
-    expect(res.body.scanned).toBe(2);
+    expect(res.body.scanned).toBe(3);
     const rows = await prisma.auditLog.findMany({ orderBy: { createdAt: 'asc' } });
     expect(rows.map((r) => r.hashVersion)).toEqual([1, ...rows.slice(1).map(() => 2)]);
   });

@@ -16,8 +16,20 @@ import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 // audit-log inserts serialize on the chain and can't fork prevHash.
 const CHAIN_LOCK_KEY = 0xa1d11_1067n;
 
-// Version 1 is the boilerplate formula; version 2 also covers organizationId and clientId.
+// Version 1 is the boilerplate formula; version 2 also covers organizationId and clientId and
+// hashes metadata as canonical JSON, because JSONB hands objects back with its own key order.
 export const CURRENT_AUDIT_HASH_VERSION = 2;
+
+export function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value === null || typeof value !== 'object' || value instanceof Date) return value;
+  const object = value as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.keys(object)
+      .sort()
+      .map((key) => [key, canonicalJson(object[key])]),
+  );
+}
 
 export function computeAuditHash(
   prevHash: string | null,
@@ -48,7 +60,7 @@ export function computeAuditHash(
     action: fields.action,
     resource: fields.resource,
     resourceId: fields.resourceId,
-    metadata: fields.metadata ?? null,
+    metadata: version >= 2 ? canonicalJson(fields.metadata ?? null) : (fields.metadata ?? null),
     ipAddress: fields.ipAddress,
     userAgent: fields.userAgent,
     createdAt: fields.createdAt.toISOString(),

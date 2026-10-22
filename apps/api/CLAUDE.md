@@ -119,7 +119,8 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
 - O `@Cacheable` prefixa a chave com `system:`, `none:` ou o escopo (organização, workspace, cliente, anunciante):
   resultado de um contexto nunca serve outro.
 - O fallback de super admin só vale pra membership no `__admin__` com o papel `SuperAdmin`.
-- Cadeia de auditoria: `hashVersion` 1 é a fórmula do boilerplate; 2 cobre `organizationId` e `clientId`. A FK de
+- Cadeia de auditoria: `hashVersion` 1 é a fórmula do boilerplate; 2 cobre `organizationId` e `clientId` e serializa o
+  `metadata` em JSON canônico (chaves ordenadas, recursivamente), porque o JSONB devolve as chaves em outra ordem. A FK de
   `AuditLog.organizationId` é `RESTRICT`, pra cascata nenhuma reescrever linha já encadeada.
 - Auditoria: `@Audit` nas rotas; em use-case, `AuditService.record({ actorId, action, entity, entityId })`. O escopo
   (organização e cliente) vem do contexto.

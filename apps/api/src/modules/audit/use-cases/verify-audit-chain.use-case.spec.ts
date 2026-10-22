@@ -142,6 +142,30 @@ describe('VerifyAuditChainUseCase', () => {
     expect(result).toMatchObject({ valid: false, reason: 'bad_hash' });
   });
 
+  it('verifies version 2 rows whose metadata comes back with another key order (JSONB)', async () => {
+    const written = makeLog(null, {
+      metadata: { method: 'POST', path: '/users', params: {}, body: { name: 'A', email: 'a@b.c' } },
+    });
+    const readBack: AuditLog = {
+      ...written,
+      metadata: { body: { email: 'a@b.c', name: 'A' }, path: '/users', params: {}, method: 'POST' },
+    };
+
+    const result = await setup([readBack]).useCase.execute();
+
+    expect(result).toMatchObject({ valid: true, reason: 'ok' });
+  });
+
+  it('hashes version 2 metadata independently of key order, nested and inside arrays', () => {
+    const base = makeLog(null);
+    const a = { ...base, metadata: { b: 1, a: { d: [{ y: 1, x: 2 }], c: 3 } } };
+    const b = { ...base, metadata: { a: { c: 3, d: [{ x: 2, y: 1 }] }, b: 1 } };
+
+    expect(computeAuditHash(null, a, 2)).toBe(computeAuditHash(null, b, 2));
+    // Inherited v1 defect: the old formula depends on key order, so such v1 rows stay unverifiable.
+    expect(computeAuditHash(null, a, 1)).not.toBe(computeAuditHash(null, b, 1));
+  });
+
   it('returns valid=true for an empty chain', async () => {
     const { useCase } = setup([]);
     const result = await useCase.execute();
