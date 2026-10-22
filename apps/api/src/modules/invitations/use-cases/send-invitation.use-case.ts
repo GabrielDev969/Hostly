@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InvitationsRepository } from '../repositories/invitations.repository.interface';
 import { RolesRepository } from '@modules/rbac/repositories/roles.repository.interface';
+import { ClientsRepository } from '@modules/clients/repositories/clients.repository.interface';
 import { assertCanGrant, assertRoleFitsScope } from '@modules/rbac/constants/roles';
 import { TenantContext } from '@shared/tenancy/tenant-context';
 import { UsersRepository } from '@modules/users/repositories/users.repository.interface';
@@ -17,6 +18,7 @@ interface SendInvitationInput {
   workspaceId: string;
   email: string;
   roleId: string;
+  clientId: string | null;
   invitedById: string;
 }
 
@@ -28,16 +30,20 @@ export class SendInvitationUseCase {
     private users: UsersRepository,
     private members: WorkspaceMembersRepository,
     private workspaces: WorkspacesRepository,
+    private clients: ClientsRepository,
     private emailDispatcher: EmailDispatcher,
   ) {}
 
   async execute(input: SendInvitationInput): Promise<InvitationResponseDto> {
     const role = await this.roles.findByIdInWorkspace(input.roleId, input.workspaceId);
     if (!role) throw new NotFoundException('Role not found in this workspace');
-    // Invitations carry no client/advertiser yet (#16), so they only create operator memberships.
-    const membership = { clientId: null, advertiserId: null };
+    // Advertiser invitations arrive with the Advertiser table.
+    const membership = { clientId: input.clientId, advertiserId: null };
     assertCanGrant(TenantContext.scope, membership);
     assertRoleFitsScope(role, membership);
+    if (input.clientId && !(await this.clients.findById(input.clientId))) {
+      throw new NotFoundException('Client not found');
+    }
 
     const existingUser = await this.users.findByEmail(input.email);
     if (existingUser) {
@@ -63,6 +69,7 @@ export class SendInvitationUseCase {
       workspaceId: input.workspaceId,
       roleId: input.roleId,
       invitedById: input.invitedById,
+      clientId: input.clientId,
       tokenHash,
       expiresAt,
     });

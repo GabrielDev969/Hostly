@@ -1,25 +1,31 @@
 import { Injectable } from '@nestjs/common';
 import { Invitation as PrismaInvitation } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';
+import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 import { Invitation } from '../entities/invitation.entity';
 import { CreateInvitationData, InvitationsRepository } from './invitations.repository.interface';
 
 @Injectable()
 export class PrismaInvitationsRepository extends InvitationsRepository {
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private scoped: ScopedPrismaService,
+  ) {
     super();
   }
 
   async create(data: CreateInvitationData): Promise<Invitation> {
-    const created = await this.prisma.invitation.create({ data });
+    const created = await this.scoped.client.invitation.create({ data });
     return this.toEntity(created);
   }
 
   async findById(id: string): Promise<Invitation | null> {
-    const found = await this.prisma.invitation.findUnique({ where: { id } });
+    const found = await this.scoped.client.invitation.findUnique({ where: { id } });
     return found ? this.toEntity(found) : null;
   }
 
+  // findByTokenHash and markAsAccepted serve the accept flow, which runs before the user has a
+  // membership and so without a scope; everything else goes through the scoped client.
   async findByTokenHash(tokenHash: string): Promise<Invitation | null> {
     const found = await this.prisma.invitation.findUnique({
       where: { tokenHash },
@@ -28,7 +34,7 @@ export class PrismaInvitationsRepository extends InvitationsRepository {
   }
 
   async findManyByWorkspace(workspaceId: string): Promise<Invitation[]> {
-    const items = await this.prisma.invitation.findMany({
+    const items = await this.scoped.client.invitation.findMany({
       where: { workspaceId },
       orderBy: { createdAt: 'desc' },
     });
@@ -39,7 +45,7 @@ export class PrismaInvitationsRepository extends InvitationsRepository {
     email: string,
     workspaceId: string,
   ): Promise<Invitation | null> {
-    const found = await this.prisma.invitation.findFirst({
+    const found = await this.scoped.client.invitation.findFirst({
       where: {
         email,
         workspaceId,
@@ -58,7 +64,7 @@ export class PrismaInvitationsRepository extends InvitationsRepository {
   }
 
   async delete(id: string): Promise<void> {
-    await this.prisma.invitation.delete({ where: { id } });
+    await this.scoped.client.invitation.delete({ where: { id } });
   }
 
   private toEntity(raw: PrismaInvitation): Invitation {
@@ -68,6 +74,7 @@ export class PrismaInvitationsRepository extends InvitationsRepository {
       workspaceId: raw.workspaceId,
       roleId: raw.roleId,
       invitedById: raw.invitedById,
+      clientId: raw.clientId,
       tokenHash: raw.tokenHash,
       expiresAt: raw.expiresAt,
       acceptedAt: raw.acceptedAt,

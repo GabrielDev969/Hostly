@@ -93,6 +93,8 @@ model Organization {
 
   workspaces Workspace[]
   auditLogs  AuditLog[]
+  clients    Client[]
+  sites      Site[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -135,13 +137,14 @@ model WorkspaceMember {
   workspaceId  String
   roleId       String
   // Tenant scope of the membership: null/null = operator; clientId = client user; both = advertiser.
-  // Foreign keys arrive with the Client (#16) and Advertiser tables.
+  // The advertiserId foreign key arrives with the Advertiser table.
   clientId     String?
   advertiserId String?
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   role      Role      @relation(fields: [roleId], references: [id])
+  client    Client?   @relation(fields: [clientId], references: [id], onDelete: Restrict)
 
   joinedAt DateTime @default(now())
 
@@ -157,16 +160,71 @@ model Invitation {
   workspaceId String
   roleId      String
   invitedById String
+  // Client the accepted membership belongs to; null = operator membership.
+  clientId    String?
   tokenHash   String    @unique
   expiresAt   DateTime
   acceptedAt  DateTime?
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   invitedBy User      @relation("InvitedBy", fields: [invitedById], references: [id])
+  client    Client?   @relation(fields: [clientId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
 
   @@index([email])
+  @@index([clientId])
+}
+
+enum ClientStatus {
+  onboarding
+  active
+  paused
+}
+
+model Client {
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String
+  status         ClientStatus @default(onboarding)
+  // The operator's own robots (fair, demo, event). One per organization, always active, never deleted:
+  // enforced by a partial unique index and a CHECK in the migration SQL.
+  isInternal     Boolean      @default(false)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  sites        Site[]
+  members      WorkspaceMember[]
+  invitations  Invitation[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Target of Site's composite foreign key, so a site can never point to another organization's client.
+  @@unique([id, organizationId])
+  @@index([organizationId])
+  @@index([deletedAt])
+}
+
+model Site {
+  id             String  @id @default(uuid())
+  organizationId String
+  clientId       String
+  name           String
+  // IANA time zone; the robot plays its schedule by it.
+  timezone       String
+  address        String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  client       Client       @relation(fields: [clientId, organizationId], references: [id, organizationId], onDelete: Restrict)
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([organizationId])
+  @@index([clientId])
+  @@index([deletedAt])
 }
 
 model Role {

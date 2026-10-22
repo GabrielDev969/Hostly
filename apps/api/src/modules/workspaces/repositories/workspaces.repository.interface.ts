@@ -12,6 +12,8 @@ export interface CreateWorkspaceWithDefaultsData {
     permissionKeys: string[];
   }>;
   ownerRoleName: string;
+  // Name of the organization's internal client (its own robots); comes from config, never from code.
+  internalClientName: string;
 }
 
 export interface CreateWorkspaceResult {

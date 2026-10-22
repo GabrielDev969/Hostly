@@ -5,6 +5,7 @@ export interface CreateInvitationData {
   workspaceId: string;
   roleId: string;
   invitedById: string;
+  clientId: string | null;
   tokenHash: string;
   expiresAt: Date;
 }

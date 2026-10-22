@@ -12,12 +12,23 @@ export async function provisionOperator(
   const workspace = await app.get(CreateWorkspaceUseCase).execute({
     userId: owner.id,
     name: options.name ?? 'Operator',
+    internalClientName: `${options.name ?? 'Operator'} robots`,
     isPersonal: options.isPersonal ?? false,
   });
   return workspace.id;
 }
 
-// Client and advertiser memberships are created directly until invitations carry a client (#16).
+// A client of the organization, written directly so member fixtures can point to it.
+export async function createClient(
+  organizationId: string,
+  name: string,
+  id?: string,
+): Promise<string> {
+  const client = await getPrisma().client.create({ data: { id, organizationId, name } });
+  return client.id;
+}
+
+// Advertiser memberships are created directly until invitations carry an advertiser.
 export async function addScopedMember(
   workspaceId: string,
   email: string,

@@ -93,9 +93,10 @@ dados da membership: `WorkspaceMember.clientId` / `advertiserId` (nulos = operad
 anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts` (`operator_admin`, `operator_staff`,
 `client_admin`, `client_editor`, `advertiser`).
 
-- `PERMISSION_CEILING`: teto de permissões por tipo de membership (operadora: qualquer; cliente: `workspace:read` e
-  `audit:read`; anunciante: `workspace:read`). `assertRoleFitsScope` vale pra papel de sistema e customizado em toda
-  atribuição (convite, `POST /users`, troca de papel, posse) e ao editar um papel que já está em uso. Em toda
+- `PERMISSION_CEILING`: teto de permissões por tipo de membership (operadora: qualquer; cliente: `workspace:read`,
+  `audit:read`, `client:read` e `site:read`; anunciante: `workspace:read`). `assertRoleFitsScope` vale pra papel de
+  sistema e customizado em toda atribuição (convite, `POST /users`, troca de papel, posse) e ao editar um papel que já
+  está em uso. Em toda
   requisição, o `PermissionsGuard` e o `@CurrentPermissions` cortam as permissões do papel pelo teto do escopo
   (`withinCeiling`); sem `req.scope`, nenhuma permissão. O `permissions.guard.spec.ts` falha se uma rota com
   `PermissionsGuard` ou `@CurrentPermissions` não tiver o `WorkspaceGuard` antes.
@@ -112,6 +113,10 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   escopada, escrita aninhada (use ids escalares ou o delegate do modelo), criação de raiz, `delete` que cascateia em
   modelo escopado, SQL cru e acesso sem escopo. Em qualquer modelo, escopado ou não, escrita que põe `workspaceId` ou
   `organizationId` fora do tenant do escopo dá 403, e o `update` que os grava só alcança linha do próprio tenant.
+- No `Client`, o `clientField` é o próprio `id`: o usuário de cliente só alcança a linha do cliente dele. `Client`,
+  `Site` e `Invitation` não têm `advertiserField`, então o anunciante leva 403 neles. O convite só leva `clientId`
+  (papel de cliente) quando quem convida é a operadora; o cliente interno de cada organização (robôs próprios) nasce
+  com ela e o banco o mantém único, ativo e não apagado.
 - **Tabela de negócio nova** entra em `SCOPED_MODELS` (`src/shared/tenancy/scoped-models.ts`). O
   `tenant-scope.registry.spec.ts` falha se um modelo com `organizationId`/`clientId`/`advertiserId` ficar de fora, se um
   arquivo usar modelo escopado por client cru (`PrismaService`, `PrismaClient` ou `Prisma.TransactionClient`; por ponto,

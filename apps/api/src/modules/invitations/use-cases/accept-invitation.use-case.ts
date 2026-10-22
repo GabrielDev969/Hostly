@@ -52,6 +52,7 @@ export class AcceptInvitationUseCase {
       userId: input.userId,
       workspaceId: invitation.workspaceId,
       roleId: invitation.roleId,
+      clientId: invitation.clientId,
     });
     await this.invitations.markAsAccepted(invitation.id);
 

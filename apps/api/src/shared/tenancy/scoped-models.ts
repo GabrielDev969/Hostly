@@ -40,4 +40,23 @@ export const SCOPED_MODELS: Readonly<Partial<Record<string, ScopedModel>>> = {
     clientField: 'clientId',
     advertiserField: null,
   },
+  // The client row is the client scope itself: a client user reaches only the row whose id is theirs.
+  Client: {
+    organizationWhere: (scope) => ({ organizationId: scope.organizationId }),
+    organizationData: (scope) => ({ organizationId: scope.organizationId }),
+    clientField: 'id',
+    advertiserField: null,
+  },
+  Site: {
+    organizationWhere: (scope) => ({ organizationId: scope.organizationId }),
+    organizationData: (scope) => ({ organizationId: scope.organizationId }),
+    clientField: 'clientId',
+    advertiserField: null,
+  },
+  Invitation: {
+    organizationWhere: (scope) => ({ workspace: { organizationId: scope.organizationId } }),
+    organizationData: (scope) => ({ workspaceId: scope.workspaceId }),
+    clientField: 'clientId',
+    advertiserField: null,
+  },
 };

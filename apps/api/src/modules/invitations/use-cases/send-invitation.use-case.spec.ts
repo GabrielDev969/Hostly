@@ -13,6 +13,8 @@ import { WorkspaceMembersRepository } from '@modules/workspaces/repositories/wor
 import { User } from '@modules/users/entities/user.entity';
 import { WorkspaceMemberWithRelations } from '@modules/workspaces/repositories/workspace-members.repository.interface';
 import { WorkspacesRepository } from '@modules/workspaces/repositories/workspaces.repository.interface';
+import { ClientsRepository } from '@modules/clients/repositories/clients.repository.interface';
+import { Client } from '@modules/clients/entities/client.entity';
 import { EmailDispatcher } from '@shared/mailer/email-dispatcher.service';
 
 describe('SendInvitationUseCase', () => {
@@ -21,6 +23,7 @@ describe('SendInvitationUseCase', () => {
   let users: jest.Mocked<UsersRepository>;
   let members: jest.Mocked<WorkspaceMembersRepository>;
   let workspaces: jest.Mocked<WorkspacesRepository>;
+  let clients: jest.Mocked<ClientsRepository>;
   let emailDispatcher: jest.Mocked<EmailDispatcher>;
   let useCase: SendInvitationUseCase;
 
@@ -75,11 +78,27 @@ describe('SendInvitationUseCase', () => {
     workspaces = {
       findById: jest.fn().mockResolvedValue({ id: 'w1', name: 'Acme' }),
     } as unknown as jest.Mocked<WorkspacesRepository>;
+    clients = {
+      findMany: jest.fn(),
+      findById: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      softDelete: jest.fn(),
+      countDependents: jest.fn(),
+    };
     emailDispatcher = {
       enqueue: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<EmailDispatcher>;
     useCase = inScope(
-      new SendInvitationUseCase(invitations, roles, users, members, workspaces, emailDispatcher),
+      new SendInvitationUseCase(
+        invitations,
+        roles,
+        users,
+        members,
+        workspaces,
+        clients,
+        emailDispatcher,
+      ),
     );
   });
 
@@ -98,6 +117,7 @@ describe('SendInvitationUseCase', () => {
     workspaceId: 'w1',
     email: 'newbie@example.com',
     roleId: 'r1',
+    clientId: null,
     invitedById: 'inviter',
   };
 
@@ -167,7 +187,15 @@ describe('SendInvitationUseCase', () => {
   it('refuses invitations from client users (operator memberships need an operator grantor)', async () => {
     roles.findByIdInWorkspace.mockResolvedValue(role);
     const asClient = inScope(
-      new SendInvitationUseCase(invitations, roles, users, members, workspaces, emailDispatcher),
+      new SendInvitationUseCase(
+        invitations,
+        roles,
+        users,
+        members,
+        workspaces,
+        clients,
+        emailDispatcher,
+      ),
       { ...OPERATOR_SCOPE, clientId: 'client-a' },
     );
 
@@ -175,10 +203,53 @@ describe('SendInvitationUseCase', () => {
     expect(invitations.create).not.toHaveBeenCalled();
   });
 
-  it('refuses client-scoped system roles in an invitation', async () => {
+  it('refuses a client role without a client', async () => {
     roles.findByIdInWorkspace.mockResolvedValue({ ...role, name: 'client_admin', isSystem: true });
 
     await expect(useCase.execute(input)).rejects.toBeInstanceOf(BadRequestException);
     expect(invitations.create).not.toHaveBeenCalled();
+  });
+
+  describe('with a client', () => {
+    const clientRole = { ...role, name: 'client_editor', isSystem: true };
+    const clientInput = { ...input, clientId: 'client-a' };
+
+    beforeEach(() => {
+      users.findByEmail.mockResolvedValue(null);
+      invitations.findPendingByEmailAndWorkspace.mockResolvedValue(null);
+      invitations.create.mockImplementation((data) =>
+        Promise.resolve({ id: 'i1', ...data, acceptedAt: null, createdAt: new Date() }),
+      );
+    });
+
+    it('stores the client of a client-role invitation', async () => {
+      roles.findByIdInWorkspace.mockResolvedValue(clientRole);
+      clients.findById.mockResolvedValue({ id: 'client-a' } as Client);
+
+      const result = await useCase.execute(clientInput);
+
+      expect(clients.findById).toHaveBeenCalledWith('client-a');
+      expect(invitations.create.mock.calls[0]![0].clientId).toBe('client-a');
+      expect(result.clientId).toBe('client-a');
+    });
+
+    it('throws 404 when the client is not in scope (other organization or deleted)', async () => {
+      roles.findByIdInWorkspace.mockResolvedValue(clientRole);
+      clients.findById.mockResolvedValue(null);
+
+      await expect(useCase.execute(clientInput)).rejects.toBeInstanceOf(NotFoundException);
+      expect(invitations.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an operator role with a client', async () => {
+      roles.findByIdInWorkspace.mockResolvedValue({
+        ...role,
+        name: 'operator_staff',
+        isSystem: true,
+      });
+
+      await expect(useCase.execute(clientInput)).rejects.toBeInstanceOf(BadRequestException);
+      expect(invitations.create).not.toHaveBeenCalled();
+    });
   });
 });

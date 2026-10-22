@@ -18,6 +18,14 @@ export class InvitationResponseDto {
   invitedById: string;
 
   @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    type: String,
+    description: 'Client the new member will belong to; null for an operator member',
+  })
+  clientId: string | null;
+
+  @ApiProperty({
     description: 'Acceptance token. Only returned on creation.',
     required: false,
     example: 'inv_8f3a91c2-...',
@@ -48,6 +56,7 @@ export function toInvitationDto(
     workspaceId: invitation.workspaceId,
     roleId: invitation.roleId,
     invitedById: invitation.invitedById,
+    clientId: invitation.clientId,
     ...(options.rawToken ? { token: options.rawToken } : {}),
     expiresAt: invitation.expiresAt,
     acceptedAt: invitation.acceptedAt,

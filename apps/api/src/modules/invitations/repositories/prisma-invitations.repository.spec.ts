@@ -1,4 +1,5 @@
 import { PrismaService } from '@shared/database/prisma.service';
+import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 import { PrismaInvitationsRepository } from './prisma-invitations.repository';
 
 type InvitationClient = {
@@ -22,6 +23,7 @@ describe('PrismaInvitationsRepository', () => {
     workspaceId: 'w1',
     roleId: 'r1',
     invitedById: 'u1',
+    clientId: null,
     tokenHash: 'hash',
     expiresAt: new Date('2026-12-31'),
     acceptedAt: null,
@@ -39,7 +41,13 @@ describe('PrismaInvitationsRepository', () => {
         delete: jest.fn(),
       },
     };
-    repo = new PrismaInvitationsRepository(prisma as unknown as PrismaService);
+    // One mock serves both clients: the scope filter itself is covered by the rewriter specs.
+    repo = new PrismaInvitationsRepository(
+      prisma as unknown as PrismaService,
+      {
+        client: prisma,
+      } as unknown as ScopedPrismaService,
+    );
   });
 
   describe('create', () => {
@@ -51,6 +59,7 @@ describe('PrismaInvitationsRepository', () => {
         workspaceId: 'w1',
         roleId: 'r1',
         invitedById: 'u1',
+        clientId: null,
         tokenHash: 'hash',
         expiresAt: baseRow.expiresAt,
       });

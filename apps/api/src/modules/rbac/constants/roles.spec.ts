@@ -64,6 +64,19 @@ describe('Hostly roles', () => {
       },
     );
 
+    it('lets client memberships read their client and sites, but never write them', () => {
+      expect(() =>
+        assertRoleFitsScope(customRole('client:read', 'site:read'), client),
+      ).not.toThrow();
+      for (const key of ['client:create', 'client:update', 'client:delete', 'site:create']) {
+        expect(() => assertRoleFitsScope(customRole(key), client)).toThrow(BadRequestException);
+      }
+    });
+
+    it.each([['client:read'], ['site:read']])('keeps %s away from advertisers', (key) => {
+      expect(() => assertRoleFitsScope(customRole(key), advertiser)).toThrow(BadRequestException);
+    });
+
     it('keeps audit access away from advertisers', () => {
       expect(() => assertRoleFitsScope(customRole('audit:read'), advertiser)).toThrow(
         BadRequestException,

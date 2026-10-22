@@ -77,6 +77,74 @@ describe('TenantScopeRewriter', () => {
     });
   });
 
+  describe('clients, sites and invitations', () => {
+    it('limits a client user to the own client row and its sites', () => {
+      expect(new TenantScopeRewriter(client).rewrite('Client', 'findMany', {}).where).toEqual({
+        organizationId: 'org1',
+        id: 'client-a',
+      });
+      expect(new TenantScopeRewriter(client).rewrite('Site', 'findMany', {}).where).toEqual({
+        organizationId: 'org1',
+        clientId: 'client-a',
+      });
+    });
+
+    it('gives operators every client and site of the own organization', () => {
+      for (const model of ['Client', 'Site']) {
+        expect(new TenantScopeRewriter(operator).rewrite(model, 'findMany', {}).where).toEqual({
+          organizationId: 'org1',
+        });
+      }
+    });
+
+    it('scopes invitations by organization and client', () => {
+      expect(new TenantScopeRewriter(client).rewrite('Invitation', 'findMany', {}).where).toEqual({
+        workspace: { organizationId: 'org1' },
+        clientId: 'client-a',
+      });
+    });
+
+    it.each(['Client', 'Site', 'Invitation'])('keeps advertisers out of %s', (model) => {
+      expect(() => new TenantScopeRewriter(advertiser).rewrite(model, 'findMany', {})).toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('stamps the organization on new clients and sites and refuses another one', () => {
+      expect(
+        new TenantScopeRewriter(operator).rewrite('Site', 'create', {
+          data: { clientId: 'client-a', name: 'L2', timezone: 'UTC' },
+        }).data,
+      ).toMatchObject({ organizationId: 'org1' });
+      expect(() =>
+        new TenantScopeRewriter(operator).rewrite('Client', 'create', {
+          data: { name: 'X', organizationId: 'org2' },
+        }),
+      ).toThrow(ForbiddenException);
+    });
+
+    it('refuses a client user writing another client row or moving a site', () => {
+      expect(() =>
+        new TenantScopeRewriter(client).rewrite('Client', 'update', {
+          where: { id: 'client-a' },
+          data: { id: 'client-b' },
+        }),
+      ).toThrow(ForbiddenException);
+      expect(() =>
+        new TenantScopeRewriter(client).rewrite('Site', 'update', {
+          where: { id: 's1' },
+          data: { clientId: 'client-b' },
+        }),
+      ).toThrow(ForbiddenException);
+    });
+
+    it('refuses hard deletes of a client, which would cascade into scoped rows', () => {
+      expect(() =>
+        new TenantScopeRewriter(operator).rewrite('Client', 'delete', { where: { id: 'c1' } }),
+      ).toThrow(TenantScopeError);
+    });
+  });
+
   describe('tenant roots', () => {
     it('limits Organization and Workspace to the own tenant, for every scope kind', () => {
       for (const scope of [operator, client, advertiser]) {
