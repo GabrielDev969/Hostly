@@ -4,6 +4,7 @@ dist/
 .next/
 .turbo/
 coverage/
+*.tsbuildinfo
 
 # Variáveis de ambiente (só o exemplo entra no repo)
 .env*
