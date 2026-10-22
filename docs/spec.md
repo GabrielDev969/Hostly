@@ -119,12 +119,12 @@ Tudo em TypeScript no servidor e Kotlin no robô, num único repositório.
 | Monorepo | pnpm workspaces + Turborepo | Um repo pra API, painel, worker e app |
 | API | NestJS + Prisma + PostgreSQL, partindo do seu boilerplate SaaS (Workspace + Membership) | Multiempresa e papéis já resolvidos |
 | Fila | Redis + BullMQ | Jobs de conversão de mídia e recompilação de manifesto |
-| Mídia | Storage S3 compatível (MinIO local; R2 ou S3 em produção) + CDN; FFmpeg no worker | Robô baixa direto do CDN |
+| Mídia | Storage S3 compatível (SeaweedFS local; R2 ou S3 em produção) + CDN; FFmpeg no worker | Robô baixa direto do CDN |
 | Painel | Next.js (App Router) + TanStack Query | Mesma stack que você já usa |
 | Tempo real | WebSocket nativo (`@nestjs/platform-ws`) | Cliente simples no Android com OkHttp |
 | Contratos | Pacote `contracts` com schemas Zod exportados em JSON Schema | Robô e servidor falam o mesmo formato |
 | App do robô | Kotlin, coroutines, Room, WorkManager, OkHttp, Media3/ExoPlayer, `robotservice.jar` | Offline primeiro; conferir minSdk contra o Android do robô |
-| Local | Docker Compose no OrbStack (Postgres, Redis, MinIO) | Sobe tudo com um comando |
+| Local | Docker Compose no OrbStack (Postgres, Redis, SeaweedFS) | Sobe tudo com um comando |
 | Produção | VPS com Docker; CDN na frente do bucket | Começa barato, escala depois |
 
 ```text

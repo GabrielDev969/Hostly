@@ -1,0 +1,88 @@
+# Ambiente local: Postgres, Redis e storage S3 (SeaweedFS). Valores vêm do .env (copie do .env.example).
+# As portas ficam presas em 127.0.0.1: nada é exposto na rede.
+name: hostly
+
+services:
+  postgres:
+    image: postgres:18.6-alpine3.24
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?copie .env.example para .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copie .env.example para .env}
+      POSTGRES_DB: ${POSTGRES_DB:?copie .env.example para .env}
+    ports:
+      - 127.0.0.1:${POSTGRES_PORT:?copie .env.example para .env}:5432
+    volumes:
+      # A partir do 18 o PGDATA fica em /var/lib/postgresql/18/docker; o volume monta no pai.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.10.2-alpine3.23
+    # O BullMQ pede noeviction: o Redis não pode descartar chaves de jobs.
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports:
+      - 127.0.0.1:${REDIS_PORT:?copie .env.example para .env}:6379
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  storage:
+    image: chrislusf/seaweedfs:4.48
+    # Comando padrão da imagem: weed mini -dir=/data. As chaves ligam a autenticação do S3.
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?copie .env.example para .env}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?copie .env.example para .env}
+    ports:
+      - 127.0.0.1:${S3_PORT:?copie .env.example para .env}:8333
+    volumes:
+      - storage-data:/data
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8333/healthz']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Cria o bucket e aplica o CORS em todo `up`, só com a API S3 padrão (o mesmo vale pro R2 ou S3).
+  storage-init:
+    image: amazon/aws-cli:2.38.4
+    depends_on:
+      storage:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${S3_REGION:?copie .env.example para .env}
+      AWS_ENDPOINT_URL: http://storage:8333
+      AWS_CONFIG_FILE: /tmp/aws-config
+      S3_BUCKET: ${S3_BUCKET:?copie .env.example para .env}
+      S3_CORS_ORIGINS: ${S3_CORS_ORIGINS:?copie .env.example para .env}
+    entrypoint: ['/bin/sh', '-ec']
+    command:
+      - |
+        printf '[default]\ns3 =\n  addressing_style = path\n' > "$$AWS_CONFIG_FILE"
+        if aws s3api head-bucket --bucket "$$S3_BUCKET" 2>/dev/null; then
+          echo "bucket $$S3_BUCKET já existe"
+        else
+          aws s3api create-bucket --bucket "$$S3_BUCKET"
+          echo "bucket $$S3_BUCKET criado"
+        fi
+        origins=$$(printf '%s' "$$S3_CORS_ORIGINS" | sed 's/[[:space:]]//g; s/,/","/g')
+        aws s3api put-bucket-cors --bucket "$$S3_BUCKET" --cors-configuration "{\"CORSRules\":[{\"AllowedOrigins\":[\"$$origins\"],\"AllowedMethods\":[\"GET\",\"PUT\",\"HEAD\"],\"AllowedHeaders\":[\"*\"],\"ExposeHeaders\":[\"ETag\"],\"MaxAgeSeconds\":3600}]}"
+        echo "CORS aplicado: $$S3_CORS_ORIGINS"
+    restart: 'no'
+
+volumes:
+  postgres-data:
+  redis-data:
+  storage-data:

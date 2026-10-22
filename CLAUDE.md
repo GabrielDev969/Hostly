@@ -16,12 +16,12 @@ Detalhes em `docs/spec.md` → "Stack e estrutura do repositório".
 | Monorepo | pnpm workspaces + Turborepo |
 | API | NestJS + Prisma + PostgreSQL, partindo do boilerplate SaaS (Workspace + Membership) |
 | Fila | Redis + BullMQ |
-| Mídia | Storage S3 compatível (MinIO local; R2 ou S3 em produção) + CDN; FFmpeg no worker |
+| Mídia | Storage S3 compatível (SeaweedFS local; R2 ou S3 em produção) + CDN; FFmpeg no worker |
 | Painel | Next.js (App Router) + TanStack Query |
 | Tempo real | WebSocket nativo (`@nestjs/platform-ws`) |
 | Contratos | `packages/contracts` com schemas Zod exportados em JSON Schema |
 | App do robô | Kotlin, coroutines, Room, WorkManager, OkHttp, Media3/ExoPlayer, `robotservice.jar` |
-| Local | Docker Compose no OrbStack (Postgres, Redis, MinIO) |
+| Local | Docker Compose no OrbStack (Postgres, Redis, SeaweedFS) |
 | Produção | VPS com Docker; CDN na frente do bucket |
 
 ```text
@@ -62,13 +62,19 @@ Pré-requisito: `nvm use` (Node 24.22.1, fixado no `.nvmrc`). O pnpm 12.15.0 vem
 | `pnpm test` | Testes |
 | `pnpm format` / `pnpm format:check` | Prettier escreve / confere (ignora `*.md` e `apps/robot`) |
 | `pnpm turbo run <tarefa> --filter <pacote>` | Roda uma tarefa num pacote só, ex.: `--filter @hostly/config` |
+| `cp .env.example .env` | Cria o `.env` local (uma vez; o git ignora) |
+| `docker compose up -d --wait` | Sobe Postgres, Redis e SeaweedFS e espera ficarem saudáveis; o `storage-init` cria o bucket e o CORS logo depois |
+| `docker compose ps -a` | Status dos serviços (`storage-init` termina com `Exited (0)`) |
+| `docker compose logs -f <serviço>` | Logs de um serviço: `postgres`, `redis`, `storage` ou `storage-init` |
+| `docker compose down` | Para tudo e mantém os dados nos volumes |
+| `docker compose down -v` | Para tudo e apaga os volumes (zera banco, fila e bucket) |
 
 Configs compartilhadas em `packages/config`: `tsconfig/base.json`, `tsconfig/node.json` (API e worker),
 `tsconfig/nextjs.json` (painel), `eslint` e `prettier`. No `eslint.config.js` de cada app, somar
 `parserOptions.tsconfigRootDir: import.meta.dirname`.
 
-Ainda não existem: api, web e worker entram no `pnpm dev` quando nascerem (#15, #19, #30); Docker Compose (#12);
-`apps/robot` é Gradle, fora do pnpm, e os comandos dele chegam na #23.
+Ainda não existem: api, web e worker entram no `pnpm dev` quando nascerem (#15, #19, #30); `apps/robot` é Gradle,
+fora do pnpm, e os comandos dele chegam na #23.
 
 ## Regras críticas
 
