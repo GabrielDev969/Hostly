@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # Só as actions do CI, que vão fixadas por SHA; os PRs passam pelo mesmo CI.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
