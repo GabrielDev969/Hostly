@@ -2,6 +2,8 @@ import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@
 import { Reflector } from '@nestjs/core';
 import { REQUIRE_PERMISSIONS_KEY } from '../decorators/require-permissions.decorator';
 import { Request } from 'express';
+import { withinCeiling } from '@modules/rbac/constants/roles';
+import type { TenantScope } from '@shared/tenancy/tenant-scope';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -14,8 +16,10 @@ export class PermissionsGuard implements CanActivate {
     ]);
     if (!required || required.length === 0) return true;
 
-    const req = ctx.switchToHttp().getRequest<Request & { permissions?: string[] }>();
-    const userPerms: string[] = req.permissions ?? [];
+    const req = ctx
+      .switchToHttp()
+      .getRequest<Request & { permissions?: string[]; scope?: TenantScope }>();
+    const userPerms = withinCeiling(req.permissions ?? [], req.scope);
 
     const ok = required.every((p) => userPerms.includes(p));
     if (!ok) throw new ForbiddenException(`Permission required: ${required.join(', ')}`);

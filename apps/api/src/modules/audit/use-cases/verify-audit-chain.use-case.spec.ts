@@ -1,6 +1,7 @@
 import { VerifyAuditChainUseCase } from './verify-audit-chain.use-case';
 import { AuditLogsRepository } from '../repositories/audit-logs.repository.interface';
 import { createHash } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { computeAuditHash } from '../repositories/prisma-audit-logs.repository';
 import type { AuditLog } from '../entities/audit-log.entity';
 
@@ -164,6 +165,85 @@ describe('VerifyAuditChainUseCase', () => {
     expect(computeAuditHash(null, a, 2)).toBe(computeAuditHash(null, b, 2));
     // Inherited v1 defect: the old formula depends on key order, so such v1 rows stay unverifiable.
     expect(computeAuditHash(null, a, 1)).not.toBe(computeAuditHash(null, b, 1));
+  });
+
+  it('pins the version 2 formula, hashVersion included', () => {
+    const row = makeLog('p0', {
+      id: 'golden',
+      userId: 'u1',
+      workspaceId: 'w1',
+      organizationId: 'org1',
+      clientId: 'client-a',
+      action: 'golden.event',
+      resource: 'User',
+      resourceId: 'r1',
+      metadata: { b: 'x', a: { d: [{ y: 1, x: 2 }], c: 3 } },
+      ipAddress: '127.0.0.1',
+      userAgent: 'jest',
+    });
+    // sha256 of the canonical JSON, computed outside computeAuditHash.
+    expect(row.hash).toBe('ac6cefd3b882436546e38c451c14185febdc08e0f52b33109e2d19d65238437e');
+  });
+
+  it('hashes values with toJSON (Buffer, Decimal, Date) as JSONB hands them back', () => {
+    const base = makeLog(null);
+    const metadata = {
+      blob: Buffer.from('audit'),
+      amount: new Prisma.Decimal('10.50'),
+      at: new Date('2026-01-01T00:00:00Z'),
+    };
+    const written = { ...base, metadata };
+    const readBack = { ...base, metadata: JSON.parse(JSON.stringify(metadata)) as object };
+
+    expect(computeAuditHash(null, written, 2)).toBe(computeAuditHash(null, readBack, 2));
+  });
+
+  it('refuses to hash with an unknown version', () => {
+    expect(() => computeAuditHash(null, makeLog(null), 3)).toThrow();
+  });
+
+  it.each([0, 3])('returns bad_version for a row with hashVersion %i', async (hashVersion) => {
+    const ok = makeLog(null, { id: 'a' });
+    const row = { ...makeLog(ok.hash, { id: 'b' }), hashVersion };
+
+    const result = await setup([ok, row]).useCase.execute();
+
+    expect(result).toMatchObject({ valid: false, reason: 'bad_version', brokenAt: 'b' });
+  });
+
+  it('returns bad_version for a version 1 row after a version 2 row', async () => {
+    const current = makeLog(null, { id: 'current' });
+    const legacy: AuditLog = {
+      ...makeLog(current.hash, { id: 'legacy', createdAt: new Date('2026-01-02T00:00:00Z') }),
+      hashVersion: 1,
+    };
+    legacy.hash = legacyHash(current.hash, legacy);
+
+    const result = await setup([current, legacy]).useCase.execute();
+
+    expect(result).toMatchObject({ valid: false, reason: 'bad_version', brokenAt: 'legacy' });
+  });
+
+  it('checks version 1 rows by their link only, since JSONB reorders their metadata', async () => {
+    const legacy: AuditLog = {
+      ...makeLog(null, { id: 'legacy', metadata: { zeta: 1, alpha: 2 } }),
+      hashVersion: 1,
+    };
+    legacy.hash = legacyHash(null, legacy);
+    const readBack = { ...legacy, metadata: { alpha: 2, zeta: 1 } };
+    const next = makeLog(legacy.hash, { id: 'next', createdAt: new Date('2026-01-02T00:00:00Z') });
+
+    expect(await setup([readBack, next]).useCase.execute()).toMatchObject({
+      valid: true,
+      scanned: 2,
+      reason: 'ok',
+    });
+    const relinked = { ...next, prevHash: 'other' };
+    expect(await setup([readBack, relinked]).useCase.execute()).toMatchObject({
+      valid: false,
+      reason: 'broken_chain',
+      brokenAt: 'next',
+    });
   });
 
   it('returns valid=true for an empty chain', async () => {

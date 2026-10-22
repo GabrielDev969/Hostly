@@ -89,6 +89,14 @@ export function scopeKindOf(membership: ScopeIds): ScopeKind {
   return 'operator';
 }
 
+// Permissions a membership actually holds: its role's, cut down to the ceiling of its scope kind.
+// Without a scope there is no membership, so nothing is held.
+export function withinCeiling(permissions: string[], membership: ScopeIds | undefined): string[] {
+  if (!membership) return [];
+  const ceiling = PERMISSION_CEILING[scopeKindOf(membership)];
+  return ceiling === 'any' ? permissions : permissions.filter((key) => ceiling.has(key));
+}
+
 // System roles must match the membership kind; every role must fit under the kind's ceiling.
 export function assertRoleFitsScope(
   role: { name: string; permissions: ReadonlyArray<{ key: string }> },

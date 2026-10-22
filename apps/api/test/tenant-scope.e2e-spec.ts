@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { ForbiddenException, INestApplication } from '@nestjs/common';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
@@ -434,8 +434,9 @@ describe('Tenant scope (e2e)', () => {
       });
       const role = await getPrisma().role.findFirstOrThrow({ where: { workspaceId: workspaceX } });
 
+      // As operator, so the nested write (not the operator-only root rule) is what refuses it.
       await expect(
-        asClientA(() =>
+        TenantContext.runWithScope(scopeOf({}), () =>
           scoped.client.workspace.update({
             where: { id: workspaceX },
             data: {
@@ -447,6 +448,35 @@ describe('Tenant scope (e2e)', () => {
       expect(await getPrisma().workspaceMember.count({ where: { clientId: CLIENT_B } })).toBe(
         before,
       );
+    });
+
+    it('lets client users read their organization but never change it', async () => {
+      const outsider = await getPrisma().user.findUniqueOrThrow({
+        where: { email: USERS.clientAdminA },
+      });
+      const before = await getPrisma().organization.findUniqueOrThrow({
+        where: { id: organizationX },
+      });
+
+      await expect(
+        asClientA(() => scoped.client.organization.findUnique({ where: { id: organizationX } })),
+      ).resolves.toMatchObject({ id: organizationX });
+      await expect(
+        asClientA(() =>
+          scoped.client.organization.update({
+            where: { id: organizationX },
+            data: { ownerId: outsider.id },
+          }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        asClientA(() =>
+          scoped.client.workspace.updateMany({ where: {}, data: { name: 'Taken over' } }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(
+        await getPrisma().organization.findUniqueOrThrow({ where: { id: organizationX } }),
+      ).toEqual(before);
     });
 
     it('refuses raw SQL through the scoped client unless it runs as system work', async () => {

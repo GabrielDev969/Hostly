@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { createHash, randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import {
   startTestDatabase,
   stopTestDatabase,
@@ -216,5 +217,42 @@ describe('Audit logs (e2e)', () => {
     expect(res.body.scanned).toBe(3);
     const rows = await prisma.auditLog.findMany({ orderBy: { createdAt: 'asc' } });
     expect(rows.map((r) => r.hashVersion)).toEqual([1, ...rows.slice(1).map(() => 2)]);
+  });
+
+  it('verifies rows whose metadata holds values with toJSON (Buffer, Decimal, Date)', async () => {
+    const { accessToken, workspaceId } = await setup();
+    const prisma = getPrisma();
+    const workspace = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
+    const owner = await prisma.user.findUniqueOrThrow({ where: { email: 'owner@example.com' } });
+    await provisionSuperAdmin(owner.id);
+    await prisma.auditLog.deleteMany();
+
+    const { AuditService } =
+      require('../src/modules/audit/services/audit.service') as typeof import('../src/modules/audit/services/audit.service');
+    await app.get(AuditService).log({
+      action: 'json.event',
+      workspaceId,
+      organizationId: workspace.organizationId,
+      metadata: {
+        blob: Buffer.from('audit'),
+        amount: new Prisma.Decimal('10.50'),
+        at: new Date('2026-01-01T00:00:00Z'),
+      },
+    });
+
+    const res = await request(server)
+      .get('/api/v1/audit-logs/verify')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-workspace-id', workspaceId)
+      .expect(200);
+
+    expect(res.body).toMatchObject({ valid: true, scanned: 1, reason: 'ok' });
+  });
+
+  it('defaults hashVersion to the current formula for rows that omit it', async () => {
+    const row = await getPrisma().auditLog.create({
+      data: { action: 'defaulted.event', hash: randomUUID() },
+    });
+    expect(row.hashVersion).toBe(2);
   });
 });

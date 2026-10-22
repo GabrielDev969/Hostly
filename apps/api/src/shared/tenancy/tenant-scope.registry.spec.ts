@@ -31,6 +31,10 @@ const SCOPED_RELATIONS = [...RELATIONS.values()].flatMap((fields) =>
     .filter(([, relation]) => SCOPED_MODELS[relation.target])
     .map(([name]) => name),
 );
+// Raw SQL has to quote mixed-case table names, so a quoted name is how it reaches a scoped table.
+const SCOPED_TABLES = Prisma.dmmf.datamodel.models
+  .filter((model) => SCOPED_MODELS[model.name])
+  .map((model) => model.dbName ?? model.name);
 const names = (list: string[]) => list.join('|');
 const RAW_CLIENT = /\b(PrismaService|PrismaClient|TransactionClient)\b/;
 const SCOPED_ACCESS = [
@@ -38,6 +42,7 @@ const SCOPED_ACCESS = [
   new RegExp(`\\[\\s*['"\`](${names(SCOPED_DELEGATES)})['"\`]\\s*\\]`),
   new RegExp(`\\{[^}]*\\b(${names(SCOPED_DELEGATES)})\\b[^}]*\\}\\s*=`),
   new RegExp(`\\b(${names(SCOPED_RELATIONS)})\\s*:`),
+  new RegExp(`"(${names(SCOPED_TABLES)})"`),
 ];
 
 // True when code holds a raw Prisma client and reaches a scoped model by any spelling.
@@ -116,6 +121,14 @@ describe('tenant scope registry', () => {
     [
       'relation include',
       'constructor(private prisma: PrismaService) {} q() { return this.prisma.user.findMany({ include: { memberships: true } }); }',
+    ],
+    [
+      'tagged raw SQL',
+      'constructor(private prisma: PrismaService) {} q() { return this.prisma.$queryRaw`SELECT * FROM "WorkspaceMember"`; }',
+    ],
+    [
+      'unsafe raw SQL',
+      'function q(tx: Prisma.TransactionClient) { return tx.$executeRawUnsafe(\'DELETE FROM "AuditLog"\'); }',
     ],
   ])('detects raw access to scoped models through %s', (_, code) => {
     expect(touchesScopedRaw(code)).toBe(true);

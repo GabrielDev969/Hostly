@@ -48,6 +48,7 @@ const WHERE_OPERATIONS = new Set([
 const CREATE_OPERATIONS = new Set(['create', 'createMany', 'createManyAndReturn']);
 const UPDATE_OPERATIONS = new Set(['update', 'updateMany', 'updateManyAndReturn']);
 const DELETE_OPERATIONS = new Set(['delete', 'deleteMany']);
+const ROOT_WRITE_OPERATIONS = new Set([...UPDATE_OPERATIONS, ...DELETE_OPERATIONS, 'upsert']);
 
 export class TenantScopeError extends Error {}
 
@@ -75,6 +76,7 @@ export class TenantScopeRewriter {
   rewrite(model: string, operation: string, args: Args): Args {
     const scoped = SCOPED_MODELS[model];
     if (scoped) this.requireScope(model);
+    if (scoped?.root && ROOT_WRITE_OPERATIONS.has(operation)) this.assertOperatorScope(model);
 
     if (DELETE_OPERATIONS.has(operation)) this.assertNoScopedCascade(model);
 
@@ -105,6 +107,14 @@ export class TenantScopeRewriter {
       throw new TenantScopeError(`Scoped model ${model} accessed without a tenant scope`);
     }
     return this.scope;
+  }
+
+  // Client and advertiser users may read their organization's roots but never change them.
+  private assertOperatorScope(model: string): void {
+    const scope = this.requireScope(model);
+    if (scope.clientId || scope.advertiserId) {
+      throw new ForbiddenException(`Only operators can change ${model}`);
+    }
   }
 
   private scopeWhere(model: string, config: ScopedModel): Where {

@@ -8,7 +8,8 @@ export class VerifyAuditChainResponseDto {
   total: number;
 
   @ApiProperty({
-    description: 'Number of rows whose hash was successfully recomputed. Equals total when valid.',
+    description:
+      'Number of rows checked: hash recomputed for version 2, chain link only for legacy version 1. Equals total when valid.',
   })
   scanned: number;
 
@@ -20,7 +21,7 @@ export class VerifyAuditChainResponseDto {
 
   @ApiProperty({
     description: 'Why verification failed',
-    enum: ['ok', 'bad_hash', 'broken_chain'],
+    enum: ['ok', 'bad_hash', 'broken_chain', 'bad_version'],
   })
-  reason: 'ok' | 'bad_hash' | 'broken_chain';
+  reason: 'ok' | 'bad_hash' | 'broken_chain' | 'bad_version';
 }

@@ -95,7 +95,10 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
 
 - `PERMISSION_CEILING`: teto de permissões por tipo de membership (operadora: qualquer; cliente: `workspace:read` e
   `audit:read`; anunciante: `workspace:read`). `assertRoleFitsScope` vale pra papel de sistema e customizado em toda
-  atribuição (convite, `POST /users`, troca de papel, posse) e ao editar um papel que já está em uso.
+  atribuição (convite, `POST /users`, troca de papel, posse) e ao editar um papel que já está em uso. Em toda
+  requisição, o `PermissionsGuard` e o `@CurrentPermissions` cortam as permissões do papel pelo teto do escopo
+  (`withinCeiling`); sem `req.scope`, nenhuma permissão. O `permissions.guard.spec.ts` falha se uma rota com
+  `PermissionsGuard` ou `@CurrentPermissions` não tiver o `WorkspaceGuard` antes.
 - `assertCanGrant`: só operadora concede papel de operadora; os demais só dentro do próprio cliente/anunciante.
   `assertCanManageRoles`: só operadora cria ou edita papel. O escopo de quem concede vem do `TenantContext`.
 
@@ -103,25 +106,29 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   (`organizationId`, `workspaceId`, `clientId`, `advertiserId`) em `TenantContext` e em `req.scope`.
 - **Repositório de negócio usa `ScopedPrismaService` (`this.scoped.client`)**, nunca o `PrismaService` cru. A extensão
   (`src/shared/tenancy/tenant-scope.rewriter.ts`) põe o filtro de escopo em toda leitura e escrita dos modelos de
-  `SCOPED_MODELS` (inclusive as raízes `Organization` e `Workspace`, limitadas à própria organização), filtra relações de
-  lista pra esses modelos em `include`/`select`/`_count`/filtros de relação, e recusa o que não dá pra filtrar: include
-  a-um pra modelo escopado, `_count: true`, `orderBy` por relação escopada, escrita aninhada (use ids escalares ou o
-  delegate do modelo), criação de raiz, `delete` que cascateia em modelo escopado, SQL cru e acesso sem escopo.
+  `SCOPED_MODELS` (inclusive as raízes `Organization` e `Workspace`, limitadas à própria organização, que só escopo de
+  operadora altera ou apaga), filtra relações de lista pra esses modelos em `include`/`select`/`_count`/filtros de
+  relação, e recusa o que não dá pra filtrar: include a-um pra modelo escopado, `_count: true`, `orderBy` por relação
+  escopada, escrita aninhada (use ids escalares ou o delegate do modelo), criação de raiz, `delete` que cascateia em
+  modelo escopado, SQL cru e acesso sem escopo.
 - **Tabela de negócio nova** entra em `SCOPED_MODELS` (`src/shared/tenancy/scoped-models.ts`). O
   `tenant-scope.registry.spec.ts` falha se um modelo com `organizationId`/`clientId`/`advertiserId` ficar de fora, se um
   arquivo usar modelo escopado por client cru (`PrismaService`, `PrismaClient` ou `Prisma.TransactionClient`; por ponto,
-  colchete, destructuring ou relação) fora da allowlist (com motivo), ou se a convenção de chave
-  estrangeira `<relação>Id` deixar de valer (é dela que sai "lista ou a-um", porque o DMMF de runtime do Prisma 7 não
-  traz `isList`).
+  colchete, destructuring, relação ou SQL cru citando a tabela entre aspas) fora da allowlist (com motivo), ou se a
+  convenção de chave estrangeira `<relação>Id` deixar de valer (é dela que sai "lista ou a-um", porque o DMMF de
+  runtime do Prisma 7 não traz `isList`).
 - Nada de `$queryRaw`/`$executeRaw` em tabela de negócio: a extensão não enxerga SQL cru e recusa os quatro métodos de
   SQL cru no client com escopo fora de `runAsSystem`.
 - Jobs, seed e lookups de identidade que atravessam tenants rodam em `TenantContext.runAsSystem()`.
 - O `@Cacheable` prefixa a chave com `system:`, `none:` ou o escopo (organização, workspace, cliente, anunciante):
   resultado de um contexto nunca serve outro.
 - O fallback de super admin só vale pra membership no `__admin__` com o papel `SuperAdmin`.
-- Cadeia de auditoria: `hashVersion` 1 é a fórmula do boilerplate; 2 cobre `organizationId` e `clientId` e serializa o
-  `metadata` em JSON canônico (chaves ordenadas, recursivamente), porque o JSONB devolve as chaves em outra ordem. A FK de
-  `AuditLog.organizationId` é `RESTRICT`, pra cascata nenhuma reescrever linha já encadeada.
+- Cadeia de auditoria: `hashVersion` 1 é a fórmula do boilerplate, legado conferido só pela ligação (`prevHash`) e só
+  antes da primeira linha 2; 2 cobre `organizationId`, `clientId` e a própria versão e serializa o `metadata` em JSON
+  canônico (passado por `JSON.stringify` e com chaves ordenadas, recursivamente), porque o JSONB devolve as chaves em
+  outra ordem. O `create` grava o mesmo JSON que entrou no hash. Outra versão reprova o verify com `bad_version`; o
+  default da coluna é 2. A FK de `AuditLog.organizationId` é `RESTRICT`, pra cascata nenhuma reescrever linha já
+  encadeada.
 - Auditoria: `@Audit` nas rotas; em use-case, `AuditService.record({ actorId, action, entity, entityId })`. O escopo
   (organização e cliente) vem do contexto.
 

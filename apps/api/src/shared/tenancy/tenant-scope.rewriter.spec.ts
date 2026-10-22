@@ -89,6 +89,30 @@ describe('TenantScopeRewriter', () => {
       }
     });
 
+    it.each([
+      ['Organization', 'update', { where: { id: 'org1' }, data: { ownerId: 'u2' } }],
+      ['Organization', 'updateMany', { where: {}, data: { name: 'Mine' } }],
+      ['Workspace', 'update', { where: { id: 'w1' }, data: { name: 'Mine' } }],
+      ['Workspace', 'updateManyAndReturn', { where: {}, data: { name: 'Mine' } }],
+      ['Workspace', 'upsert', { where: { id: 'w1' }, create: {}, update: { name: 'Mine' } }],
+      ['Workspace', 'delete', { where: { id: 'w1' } }],
+      ['Organization', 'deleteMany', { where: {} }],
+    ])('lets only operators change a tenant root: %s.%s', (model, operation, args) => {
+      for (const scope of [client, advertiser]) {
+        expect(() => new TenantScopeRewriter(scope).rewrite(model, operation, args)).toThrow(
+          ForbiddenException,
+        );
+      }
+    });
+
+    it('still lets operators update their own root', () => {
+      const out = new TenantScopeRewriter(operator).rewrite('Organization', 'update', {
+        where: { id: 'org1' },
+        data: { name: 'Renamed' },
+      });
+      expect(out.where).toEqual({ id: 'org1', AND: [{ id: 'org1' }] });
+    });
+
     it('refuses to create a tenant through the scoped client', () => {
       expect(() =>
         new TenantScopeRewriter(operator).rewrite('Organization', 'create', {
