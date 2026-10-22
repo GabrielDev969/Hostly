@@ -1,7 +1,8 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import {
   startTestDatabase,
   stopTestDatabase,
@@ -124,52 +125,11 @@ describe('Audit logs (e2e)', () => {
     });
   });
 
-  it('verifies a chain of an old-formula row and version 2 rows with multi-key metadata', async () => {
+  it('verifies a chain of version 2 rows with multi-key metadata', async () => {
     const { accessToken, workspaceId, staffRoleId } = await setup();
     const prisma = getPrisma();
     const workspace = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
     await prisma.auditLog.deleteMany();
-
-    // A row written before tenant_scope: hashVersion 1, then organizationId backfilled by the migration.
-    const legacy = {
-      id: randomUUID(),
-      userId: null,
-      workspaceId,
-      action: 'legacy.event',
-      resource: null,
-      resourceId: null,
-      metadata: null,
-      ipAddress: null,
-      userAgent: null,
-      createdAt: new Date(Date.now() - 60_000),
-    };
-    const legacyHash = createHash('sha256')
-      .update(
-        JSON.stringify({
-          prevHash: null,
-          id: legacy.id,
-          userId: legacy.userId,
-          workspaceId: legacy.workspaceId,
-          action: legacy.action,
-          resource: legacy.resource,
-          resourceId: legacy.resourceId,
-          metadata: legacy.metadata,
-          ipAddress: legacy.ipAddress,
-          userAgent: legacy.userAgent,
-          createdAt: legacy.createdAt.toISOString(),
-        }),
-      )
-      .digest('hex');
-    await prisma.auditLog.create({
-      data: {
-        ...legacy,
-        metadata: undefined,
-        organizationId: workspace.organizationId,
-        prevHash: null,
-        hash: legacyHash,
-        hashVersion: 1,
-      },
-    });
 
     // Version 2 rows with multi-key, nested metadata: JSONB hands the keys back in another order.
     const { AuditService } =
@@ -212,9 +172,66 @@ describe('Audit logs (e2e)', () => {
       .set('x-workspace-id', workspaceId)
       .expect(200);
 
-    expect(res.body).toMatchObject({ valid: true, reason: 'ok' });
-    expect(res.body.scanned).toBe(3);
-    const rows = await prisma.auditLog.findMany({ orderBy: { createdAt: 'asc' } });
-    expect(rows.map((r) => r.hashVersion)).toEqual([1, ...rows.slice(1).map(() => 2)]);
+    expect(res.body).toMatchObject({ valid: true, reason: 'ok', scanned: 2 });
+    const rows = await prisma.auditLog.findMany();
+    expect(rows.map((r) => r.hashVersion)).toEqual([2, 2]);
+  });
+
+  it('rejects a tampered chain downgraded to version 1', async () => {
+    const { accessToken, workspaceId } = await setup();
+    const prisma = getPrisma();
+    const owner = await prisma.user.findUniqueOrThrow({ where: { email: 'owner@example.com' } });
+    await provisionSuperAdmin(owner.id);
+    const verify = () =>
+      request(server)
+        .get('/api/v1/audit-logs/verify')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .set('x-workspace-id', workspaceId)
+        .expect(200);
+    expect((await verify()).body).toMatchObject({ valid: true });
+
+    const { count } = await prisma.auditLog.updateMany({
+      data: { action: 'tampered.event', hashVersion: 1 },
+    });
+    expect(count).toBeGreaterThan(0);
+
+    expect((await verify()).body).toMatchObject({ valid: false, reason: 'bad_version' });
+  });
+
+  it('verifies rows whose metadata holds values with toJSON (Buffer, Decimal, Date)', async () => {
+    const { accessToken, workspaceId } = await setup();
+    const prisma = getPrisma();
+    const workspace = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
+    const owner = await prisma.user.findUniqueOrThrow({ where: { email: 'owner@example.com' } });
+    await provisionSuperAdmin(owner.id);
+    await prisma.auditLog.deleteMany();
+
+    const { AuditService } =
+      require('../src/modules/audit/services/audit.service') as typeof import('../src/modules/audit/services/audit.service');
+    await app.get(AuditService).log({
+      action: 'json.event',
+      workspaceId,
+      organizationId: workspace.organizationId,
+      metadata: {
+        blob: Buffer.from('audit'),
+        amount: new Prisma.Decimal('10.50'),
+        at: new Date('2026-01-01T00:00:00Z'),
+      },
+    });
+
+    const res = await request(server)
+      .get('/api/v1/audit-logs/verify')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-workspace-id', workspaceId)
+      .expect(200);
+
+    expect(res.body).toMatchObject({ valid: true, scanned: 1, reason: 'ok' });
+  });
+
+  it('defaults hashVersion to the current formula for rows that omit it', async () => {
+    const row = await getPrisma().auditLog.create({
+      data: { action: 'defaulted.event', hash: randomUUID() },
+    });
+    expect(row.hashVersion).toBe(2);
   });
 });

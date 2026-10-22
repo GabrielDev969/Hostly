@@ -20,7 +20,7 @@ export class VerifyAuditChainResponseDto {
 
   @ApiProperty({
     description: 'Why verification failed',
-    enum: ['ok', 'bad_hash', 'broken_chain'],
+    enum: ['ok', 'bad_hash', 'broken_chain', 'bad_version'],
   })
-  reason: 'ok' | 'bad_hash' | 'broken_chain';
+  reason: 'ok' | 'bad_hash' | 'broken_chain' | 'bad_version';
 }

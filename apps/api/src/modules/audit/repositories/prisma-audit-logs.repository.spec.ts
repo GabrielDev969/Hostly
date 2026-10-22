@@ -119,6 +119,27 @@ describe('PrismaAuditLogsRepository', () => {
       expect(result.prevHash).toBeNull();
     });
 
+    it('persists metadata as the plain JSON it hashed, so Prisma cannot store it another way', async () => {
+      prisma.auditLog.findFirst.mockResolvedValue(null);
+      prisma.auditLog.create.mockImplementation(({ data }) =>
+        Promise.resolve({ ...baseRow, ...data }),
+      );
+
+      await repo.create({
+        action: 'json.event',
+        metadata: { blob: Buffer.from('audit'), amount: new Prisma.Decimal('10.50') },
+      });
+
+      const { data } = prisma.auditLog.create.mock.calls[0][0] as {
+        data: { metadata: unknown };
+      };
+      expect(data.metadata).toEqual({
+        blob: { type: 'Buffer', data: [...Buffer.from('audit')] },
+        amount: '10.5',
+      });
+      expect(Buffer.isBuffer((data.metadata as { blob: unknown }).blob)).toBe(false);
+    });
+
     it('coerces missing metadata to Prisma.JsonNull', async () => {
       prisma.auditLog.findFirst.mockResolvedValue(null);
       prisma.auditLog.create.mockImplementation(({ data }) =>

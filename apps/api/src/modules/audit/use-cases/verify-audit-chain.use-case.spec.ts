@@ -1,6 +1,7 @@
 import { VerifyAuditChainUseCase } from './verify-audit-chain.use-case';
 import { AuditLogsRepository } from '../repositories/audit-logs.repository.interface';
 import { createHash } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { computeAuditHash } from '../repositories/prisma-audit-logs.repository';
 import type { AuditLog } from '../entities/audit-log.entity';
 
@@ -23,7 +24,7 @@ function makeLog(prevHash: string | null, overrides: Partial<AuditLog> = {}): Au
     createdAt: overrides.createdAt ?? new Date('2026-01-01T00:00:00Z'),
     ...overrides,
   };
-  base.hash = computeAuditHash(prevHash, base, base.hashVersion);
+  base.hash = computeAuditHash(prevHash, base);
   return base;
 }
 
@@ -112,25 +113,26 @@ describe('VerifyAuditChainUseCase', () => {
     expect(result.brokenAt).toBe('b');
   });
 
-  it('still verifies rows hashed with the old formula after organizationId is backfilled', async () => {
-    const legacy: AuditLog = {
-      ...makeLog(null, { id: 'legacy', workspaceId: 'w1' }),
-      hashVersion: 1,
-    };
+  it('returns bad_version for a lone version 1 row, even with a valid old-formula hash', async () => {
+    const legacy: AuditLog = { ...makeLog(null, { id: 'legacy' }), hashVersion: 1 };
     legacy.hash = legacyHash(null, legacy);
-    // What the tenant_scope migration does to existing rows.
-    legacy.organizationId = 'org1';
-    const next = makeLog(legacy.hash, {
-      id: 'new',
-      workspaceId: 'w1',
-      organizationId: 'org1',
-      clientId: 'client-a',
-      createdAt: new Date('2026-01-02T00:00:00Z'),
-    });
 
-    const result = await setup([legacy, next]).useCase.execute();
+    const result = await setup([legacy]).useCase.execute();
 
-    expect(result).toMatchObject({ valid: true, scanned: 2, reason: 'ok' });
+    expect(result).toMatchObject({ valid: false, reason: 'bad_version', brokenAt: 'legacy' });
+  });
+
+  it('rejects a tampered chain downgraded to version 1', async () => {
+    const g = makeLog(null, { id: 'g' });
+    const b = makeLog(g.hash, { id: 'b' });
+    const c = makeLog(b.hash, { id: 'c' });
+    b.action = 'evil.event';
+    // UPDATE "AuditLog" SET "hashVersion" = 1 on every row.
+    const downgraded = [g, b, c].map((row) => ({ ...row, hashVersion: 1 }));
+
+    const result = await setup(downgraded).useCase.execute();
+
+    expect(result).toMatchObject({ valid: false, reason: 'bad_version', brokenAt: 'g' });
   });
 
   it('detects tampering with the scope columns of version 2 rows', async () => {
@@ -161,9 +163,60 @@ describe('VerifyAuditChainUseCase', () => {
     const a = { ...base, metadata: { b: 1, a: { d: [{ y: 1, x: 2 }], c: 3 } } };
     const b = { ...base, metadata: { a: { c: 3, d: [{ x: 2, y: 1 }] }, b: 1 } };
 
-    expect(computeAuditHash(null, a, 2)).toBe(computeAuditHash(null, b, 2));
-    // Inherited v1 defect: the old formula depends on key order, so such v1 rows stay unverifiable.
-    expect(computeAuditHash(null, a, 1)).not.toBe(computeAuditHash(null, b, 1));
+    expect(computeAuditHash(null, a)).toBe(computeAuditHash(null, b));
+  });
+
+  it('pins the version 2 formula, hashVersion included', () => {
+    const row = makeLog('p0', {
+      id: 'golden',
+      userId: 'u1',
+      workspaceId: 'w1',
+      organizationId: 'org1',
+      clientId: 'client-a',
+      action: 'golden.event',
+      resource: 'User',
+      resourceId: 'r1',
+      metadata: { b: 'x', a: { d: [{ y: 1, x: 2 }], c: 3 } },
+      ipAddress: '127.0.0.1',
+      userAgent: 'jest',
+    });
+    // sha256 of the canonical JSON, computed outside computeAuditHash.
+    expect(row.hash).toBe('ac6cefd3b882436546e38c451c14185febdc08e0f52b33109e2d19d65238437e');
+  });
+
+  it('hashes values with toJSON (Buffer, Decimal, Date) as JSONB hands them back', () => {
+    const base = makeLog(null);
+    const metadata = {
+      blob: Buffer.from('audit'),
+      amount: new Prisma.Decimal('10.50'),
+      at: new Date('2026-01-01T00:00:00Z'),
+    };
+    const written = { ...base, metadata };
+    const readBack = { ...base, metadata: JSON.parse(JSON.stringify(metadata)) as object };
+
+    expect(computeAuditHash(null, written)).toBe(computeAuditHash(null, readBack));
+  });
+
+  it.each([0, 1, 3])('returns bad_version for a row with hashVersion %i', async (hashVersion) => {
+    const ok = makeLog(null, { id: 'a' });
+    const row = { ...makeLog(ok.hash, { id: 'b' }), hashVersion };
+
+    const result = await setup([ok, row]).useCase.execute();
+
+    expect(result).toMatchObject({ valid: false, reason: 'bad_version', brokenAt: 'b' });
+  });
+
+  it('returns bad_version for a version 1 row after a version 2 row', async () => {
+    const current = makeLog(null, { id: 'current' });
+    const legacy: AuditLog = {
+      ...makeLog(current.hash, { id: 'legacy', createdAt: new Date('2026-01-02T00:00:00Z') }),
+      hashVersion: 1,
+    };
+    legacy.hash = legacyHash(current.hash, legacy);
+
+    const result = await setup([current, legacy]).useCase.execute();
+
+    expect(result).toMatchObject({ valid: false, reason: 'bad_version', brokenAt: 'legacy' });
   });
 
   it('returns valid=true for an empty chain', async () => {
