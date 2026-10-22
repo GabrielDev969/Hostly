@@ -1,0 +1,22 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testEnvironmentOptions": { "customExportConditions": ["node"] },
+  "testRegex": ".e2e-spec.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "setupFiles": ["<rootDir>/test/env.ts"],
+  "globalSetup": "<rootDir>/test/helpers/test-redis.ts",
+  "moduleNameMapper": {
+    "^nanoid$": "<rootDir>/test/stubs/nanoid.ts",
+    "^@core/(.*)$": "<rootDir>/src/core/$1",
+    "^@modules/(.*)$": "<rootDir>/src/modules/$1",
+    "^@shared/(.*)$": "<rootDir>/src/shared/$1",
+    "^@generated/(.*)$": "<rootDir>/src/generated/$1",
+    "^@test/(.*)$": "<rootDir>/test/$1",
+    "^src/(.*)$": "<rootDir>/src/$1"
+  },
+  "testTimeout": 60000
+}
