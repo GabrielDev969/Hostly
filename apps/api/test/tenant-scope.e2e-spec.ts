@@ -479,6 +479,41 @@ describe('Tenant scope (e2e)', () => {
       ).toEqual(before);
     });
 
+    it('never moves a role to another organization', async () => {
+      const roleX = await getPrisma().role.create({
+        data: { name: 'custom-x', workspaceId: workspaceX },
+      });
+      const roleY = await getPrisma().role.create({
+        data: { name: 'custom-y', workspaceId: workspaceY },
+      });
+      const asOperatorY = <T>(fn: () => Promise<T>) =>
+        TenantContext.runWithScope(
+          scopeOf({ organizationId: organizationY, workspaceId: workspaceY }),
+          fn,
+        );
+      const move = (id: string, workspaceId: string) => () =>
+        scoped.client.role.update({ where: { id }, data: { workspaceId } });
+
+      await expect(asClientA(move(roleX.id, workspaceY))).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(asOperatorY(move(roleY.id, workspaceX))).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      // Pulling another tenant's role into the own tenant finds no row to update.
+      await expect(asOperatorY(move(roleX.id, workspaceY))).rejects.toThrow();
+      await expect(
+        TenantContext.runWithScope(scopeOf({}), move(roleX.id, workspaceX)),
+      ).resolves.toMatchObject({ id: roleX.id, workspaceId: workspaceX });
+
+      expect(await getPrisma().role.findUniqueOrThrow({ where: { id: roleX.id } })).toMatchObject({
+        workspaceId: workspaceX,
+      });
+      expect(await getPrisma().role.findUniqueOrThrow({ where: { id: roleY.id } })).toMatchObject({
+        workspaceId: workspaceY,
+      });
+    });
+
     it('refuses raw SQL through the scoped client unless it runs as system work', async () => {
       await expect(asClientA(() => scoped.client.$queryRaw`SELECT 1`)).rejects.toBeInstanceOf(
         TenantScopeError,

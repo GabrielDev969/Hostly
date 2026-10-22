@@ -49,6 +49,11 @@ const CREATE_OPERATIONS = new Set(['create', 'createMany', 'createManyAndReturn'
 const UPDATE_OPERATIONS = new Set(['update', 'updateMany', 'updateManyAndReturn']);
 const DELETE_OPERATIONS = new Set(['delete', 'deleteMany']);
 const ROOT_WRITE_OPERATIONS = new Set([...UPDATE_OPERATIONS, ...DELETE_OPERATIONS, 'upsert']);
+// Foreign keys that place a row of any model, scoped or not, in a tenant.
+const TENANT_KEYS: Record<string, (scope: TenantScope) => string> = {
+  workspaceId: (scope) => scope.workspaceId,
+  organizationId: (scope) => scope.organizationId,
+};
 
 export class TenantScopeError extends Error {}
 
@@ -90,12 +95,19 @@ export class TenantScopeRewriter {
     if (out.orderBy !== undefined) this.assertOrderBy(model, out.orderBy);
 
     if (CREATE_OPERATIONS.has(operation)) {
+      for (const row of Array.isArray(out.data) ? out.data : [out.data])
+        this.tenantKeys(model, row);
       out.data = Array.isArray(out.data)
         ? out.data.map((row) => this.createData(model, row))
         : this.createData(model, out.data);
     }
-    if (UPDATE_OPERATIONS.has(operation)) out.data = this.updateData(model, out.data);
+    if (UPDATE_OPERATIONS.has(operation)) {
+      out.where = this.pinTenantKeys(model, out.where, this.tenantKeys(model, out.data));
+      out.data = this.updateData(model, out.data);
+    }
     if (operation === 'upsert') {
+      this.tenantKeys(model, out.create);
+      out.where = this.pinTenantKeys(model, out.where, this.tenantKeys(model, out.update));
       out.create = this.createData(model, out.create);
       out.update = this.updateData(model, out.update);
     }
@@ -115,6 +127,29 @@ export class TenantScopeRewriter {
     if (scope.clientId || scope.advertiserId) {
       throw new ForbiddenException(`Only operators can change ${model}`);
     }
+  }
+
+  // A write may set a tenant key only to the scope's own tenant; returns the keys it sets.
+  private tenantKeys(model: string, data: unknown): Where {
+    if (!isObject(data)) return {};
+    const keys: Where = {};
+    for (const [field, of] of Object.entries(TENANT_KEYS)) {
+      const value = scalarValue(data[field]);
+      if (value === undefined) continue;
+      const expected = of(this.requireScope(model));
+      if (value !== expected) {
+        throw new ForbiddenException(`Cannot move ${model} outside the current tenant`);
+      }
+      keys[field] = expected;
+    }
+    return keys;
+  }
+
+  // Scoped models are already filtered; on the others, a write that sets a tenant key must also
+  // start from a row of the own tenant, or it would pull another tenant's row in.
+  private pinTenantKeys(model: string, where: unknown, keys: Where): unknown {
+    if (SCOPED_MODELS[model] || Object.keys(keys).length === 0) return where;
+    return and(where, keys);
   }
 
   private scopeWhere(model: string, config: ScopedModel): Where {

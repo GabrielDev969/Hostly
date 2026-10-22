@@ -110,7 +110,8 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   operadora altera ou apaga), filtra relações de lista pra esses modelos em `include`/`select`/`_count`/filtros de
   relação, e recusa o que não dá pra filtrar: include a-um pra modelo escopado, `_count: true`, `orderBy` por relação
   escopada, escrita aninhada (use ids escalares ou o delegate do modelo), criação de raiz, `delete` que cascateia em
-  modelo escopado, SQL cru e acesso sem escopo.
+  modelo escopado, SQL cru e acesso sem escopo. Em qualquer modelo, escopado ou não, escrita que põe `workspaceId` ou
+  `organizationId` fora do tenant do escopo dá 403, e o `update` que os grava só alcança linha do próprio tenant.
 - **Tabela de negócio nova** entra em `SCOPED_MODELS` (`src/shared/tenancy/scoped-models.ts`). O
   `tenant-scope.registry.spec.ts` falha se um modelo com `organizationId`/`clientId`/`advertiserId` ficar de fora, se um
   arquivo usar modelo escopado por client cru (`PrismaService`, `PrismaClient` ou `Prisma.TransactionClient`; por ponto,
@@ -123,11 +124,11 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
 - O `@Cacheable` prefixa a chave com `system:`, `none:` ou o escopo (organização, workspace, cliente, anunciante):
   resultado de um contexto nunca serve outro.
 - O fallback de super admin só vale pra membership no `__admin__` com o papel `SuperAdmin`.
-- Cadeia de auditoria: `hashVersion` 1 é a fórmula do boilerplate, legado conferido só pela ligação (`prevHash`) e só
-  antes da primeira linha 2; 2 cobre `organizationId`, `clientId` e a própria versão e serializa o `metadata` em JSON
-  canônico (passado por `JSON.stringify` e com chaves ordenadas, recursivamente), porque o JSONB devolve as chaves em
-  outra ordem. O `create` grava o mesmo JSON que entrou no hash. Outra versão reprova o verify com `bad_version`; o
-  default da coluna é 2. A FK de `AuditLog.organizationId` é `RESTRICT`, pra cascata nenhuma reescrever linha já
+- Cadeia de auditoria: só existe o `hashVersion` 2, que cobre `organizationId`, `clientId` e a própria versão e
+  serializa o `metadata` em JSON canônico (passado por `JSON.stringify` e com chaves ordenadas, recursivamente), porque
+  o JSONB devolve as chaves em outra ordem. O `create` grava o mesmo JSON que entrou no hash. Qualquer outra versão,
+  inclusive a 1 do boilerplate (que não dá pra recalcular), reprova o verify com `bad_version`; o default da coluna é
+  2. A FK de `AuditLog.organizationId` é `RESTRICT`, pra cascata nenhuma reescrever linha já
   encadeada.
 - Auditoria: `@Audit` nas rotas; em use-case, `AuditService.record({ actorId, action, entity, entityId })`. O escopo
   (organização e cliente) vem do contexto.

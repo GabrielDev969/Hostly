@@ -293,6 +293,50 @@ describe('TenantScopeRewriter', () => {
       });
     });
 
+    it.each([
+      ['client', client],
+      ['operator', operator],
+    ])('refuses, as %s, writes that move any model to another tenant', (_, scope) => {
+      const rewriter = new TenantScopeRewriter(scope);
+      const writes: Array<[string, string, Record<string, unknown>]> = [
+        ['Role', 'update', { where: { id: 'r1' }, data: { workspaceId: 'w2' } }],
+        ['Role', 'updateMany', { where: {}, data: { workspaceId: { set: 'w2' } } }],
+        ['Role', 'update', { where: { id: 'r1' }, data: { workspaceId: null } }],
+        ['Role', 'create', { data: { name: 'x', workspaceId: 'w2' } }],
+        ['Invitation', 'createMany', { data: [{ email: 'a@b.c', workspaceId: 'w2' }] }],
+        ['Role', 'upsert', { where: { id: 'r1' }, create: {}, update: { workspaceId: 'w2' } }],
+        ['AuditLog', 'create', { data: { action: 'a', hash: 'h', workspaceId: 'w2' } }],
+        ['Workspace', 'updateMany', { where: {}, data: { organizationId: 'org2' } }],
+      ];
+      for (const [model, operation, args] of writes) {
+        expect(() => rewriter.rewrite(model, operation, args)).toThrow(ForbiddenException);
+      }
+    });
+
+    it('keeps tenant keys inside the own tenant, on the row before and after the write', () => {
+      const rewriter = new TenantScopeRewriter(operator);
+      expect(
+        rewriter.rewrite('Role', 'update', { where: { id: 'r1' }, data: { workspaceId: 'w1' } }),
+      ).toEqual({
+        where: { id: 'r1', AND: [{ workspaceId: 'w1' }] },
+        data: { workspaceId: 'w1' },
+      });
+      expect(
+        rewriter.rewrite('Role', 'create', { data: { name: 'x', workspaceId: 'w1' } }),
+      ).toEqual({ data: { name: 'x', workspaceId: 'w1' } });
+      const rename = { where: { id: 'r1' }, data: { name: 'y' } };
+      expect(new TenantScopeRewriter(client).rewrite('Role', 'update', rename)).toEqual(rename);
+    });
+
+    it('refuses to set a tenant key without a scope', () => {
+      expect(() =>
+        new TenantScopeRewriter(null).rewrite('Role', 'update', {
+          where: { id: 'r1' },
+          data: { workspaceId: 'w1' },
+        }),
+      ).toThrow(TenantScopeError);
+    });
+
     it('rejects nested writes into scoped models from any model', () => {
       expect(() =>
         new TenantScopeRewriter(operator).rewrite('Workspace', 'update', {

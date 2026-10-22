@@ -260,8 +260,7 @@ model AuditLog {
 
   prevHash    String?
   hash        String  @unique
-  // 1 = legacy rows hashed before organizationId/clientId existed (checked by link only);
-  // 2 = hash covers them, its own version and canonical metadata.
+  // Only 2 is valid: the hash covers organizationId, clientId, its own version and canonical metadata.
   hashVersion Int     @default(2)
 
   user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)

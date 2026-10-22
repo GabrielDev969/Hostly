@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AuditLogsRepository } from '../repositories/audit-logs.repository.interface';
 import {
-  AUDIT_HASH_VERSIONS,
-  LEGACY_AUDIT_HASH_VERSION,
+  CURRENT_AUDIT_HASH_VERSION,
   computeAuditHash,
 } from '../repositories/prisma-audit-logs.repository';
 
@@ -27,7 +26,6 @@ export class VerifyAuditChainUseCase {
     let expectedPrevHash: string | null = null;
     let scanned = 0;
     let first = true;
-    let pastLegacy = false;
 
     for (;;) {
       const page = await this.auditLogs.iterateChainAsc(cursor, PAGE_SIZE);
@@ -52,8 +50,8 @@ export class VerifyAuditChainUseCase {
           };
         }
 
-        const legacy = log.hashVersion === LEGACY_AUDIT_HASH_VERSION;
-        if (!AUDIT_HASH_VERSIONS.has(log.hashVersion) || (legacy && pastLegacy)) {
+        // Any other version, the boilerplate's 1 included, cannot be recomputed and so proves nothing.
+        if (log.hashVersion !== CURRENT_AUDIT_HASH_VERSION) {
           return {
             valid: false,
             total,
@@ -63,38 +61,29 @@ export class VerifyAuditChainUseCase {
           };
         }
 
-        // Version 1 hashed metadata in insertion order, which JSONB does not keep, so a legacy
-        // row can only be checked by its link; legacy rows may only precede the current formula.
-        if (!legacy) {
-          const recomputed = computeAuditHash(
-            log.prevHash,
-            {
-              id: log.id,
-              userId: log.userId,
-              workspaceId: log.workspaceId,
-              organizationId: log.organizationId,
-              clientId: log.clientId,
-              action: log.action,
-              resource: log.resource,
-              resourceId: log.resourceId,
-              metadata: log.metadata,
-              ipAddress: log.ipAddress,
-              userAgent: log.userAgent,
-              createdAt: log.createdAt,
-            },
-            log.hashVersion,
-          );
+        const recomputed = computeAuditHash(log.prevHash, {
+          id: log.id,
+          userId: log.userId,
+          workspaceId: log.workspaceId,
+          organizationId: log.organizationId,
+          clientId: log.clientId,
+          action: log.action,
+          resource: log.resource,
+          resourceId: log.resourceId,
+          metadata: log.metadata,
+          ipAddress: log.ipAddress,
+          userAgent: log.userAgent,
+          createdAt: log.createdAt,
+        });
 
-          if (recomputed !== log.hash) {
-            return {
-              valid: false,
-              total,
-              scanned,
-              brokenAt: log.id,
-              reason: 'bad_hash',
-            };
-          }
-          pastLegacy = true;
+        if (recomputed !== log.hash) {
+          return {
+            valid: false,
+            total,
+            scanned,
+            brokenAt: log.id,
+            reason: 'bad_hash',
+          };
         }
 
         expectedPrevHash = log.hash;
