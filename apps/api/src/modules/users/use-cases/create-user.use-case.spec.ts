@@ -1,3 +1,4 @@
+import { inScope } from '@test/helpers/tenant-scope';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { CreateUserUseCase } from './create-user.use-case';
 import { UsersRepository } from '../repositories/users.repository.interface';
@@ -23,7 +24,7 @@ describe('CreateUserUseCase', () => {
     roles = {
       findByIdInWorkspace: jest.fn(),
     } as unknown as jest.Mocked<RolesRepository>;
-    useCase = new CreateUserUseCase(users, members, roles);
+    useCase = inScope(new CreateUserUseCase(users, members, roles));
   });
 
   it('throws ConflictException when email is already taken globally', async () => {

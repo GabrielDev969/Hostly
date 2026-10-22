@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';
+import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 import { computeAuditHash, PrismaAuditLogsRepository } from './prisma-audit-logs.repository';
 
 type AuditLogClient = {
@@ -24,6 +25,8 @@ describe('PrismaAuditLogsRepository', () => {
     id: 'log1',
     userId: 'u1',
     workspaceId: 'w1',
+    organizationId: 'org1',
+    clientId: 'client-a',
     action: 'user.login',
     resource: 'user',
     resourceId: 'u1',
@@ -47,7 +50,10 @@ describe('PrismaAuditLogsRepository', () => {
       $executeRaw: jest.fn().mockResolvedValue(undefined),
       $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
     };
-    repo = new PrismaAuditLogsRepository(prisma as unknown as PrismaService);
+    repo = new PrismaAuditLogsRepository(
+      prisma as unknown as PrismaService,
+      { client: prisma } as unknown as ScopedPrismaService,
+    );
   });
 
   describe('create', () => {
@@ -60,6 +66,8 @@ describe('PrismaAuditLogsRepository', () => {
       const result = await repo.create({
         userId: 'u1',
         workspaceId: 'w1',
+        organizationId: 'org1',
+        clientId: 'client-a',
         action: 'user.login',
         resource: 'user',
         resourceId: 'u1',
@@ -75,14 +83,18 @@ describe('PrismaAuditLogsRepository', () => {
           createdAt: Date;
           prevHash: string | null;
           hash: string;
+          hashVersion: number;
         };
       };
       expect(createArgs.data.prevHash).toBe('prev-hash');
+      expect(createArgs.data.hashVersion).toBe(2);
       expect(createArgs.data.hash).toBe(
         computeAuditHash('prev-hash', {
           id: createArgs.data.id,
           userId: 'u1',
           workspaceId: 'w1',
+          organizationId: 'org1',
+          clientId: 'client-a',
           action: 'user.login',
           resource: 'user',
           resourceId: 'u1',

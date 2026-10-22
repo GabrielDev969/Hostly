@@ -10,10 +10,26 @@ import {
 import { AuditLog } from '../entities/audit-log.entity';
 import { AuditLog as PrismaAuditLog, Prisma } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';
+import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 
 // Arbitrary stable bigint passed to pg_advisory_xact_lock so concurrent
 // audit-log inserts serialize on the chain and can't fork prevHash.
 const CHAIN_LOCK_KEY = 0xa1d11_1067n;
+
+// Version 1 is the boilerplate formula; version 2 also covers organizationId and clientId and
+// hashes metadata as canonical JSON, because JSONB hands objects back with its own key order.
+export const CURRENT_AUDIT_HASH_VERSION = 2;
+
+export function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value === null || typeof value !== 'object' || value instanceof Date) return value;
+  const object = value as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.keys(object)
+      .sort()
+      .map((key) => [key, canonicalJson(object[key])]),
+  );
+}
 
 export function computeAuditHash(
   prevHash: string | null,
@@ -21,6 +37,8 @@ export function computeAuditHash(
     id: string;
     userId: string | null;
     workspaceId: string | null;
+    organizationId: string | null;
+    clientId: string | null;
     action: string;
     resource: string | null;
     resourceId: string | null;
@@ -29,16 +47,20 @@ export function computeAuditHash(
     userAgent: string | null;
     createdAt: Date;
   },
+  version: number = CURRENT_AUDIT_HASH_VERSION,
 ): string {
+  const scope =
+    version >= 2 ? { organizationId: fields.organizationId, clientId: fields.clientId } : {};
   const canonical = JSON.stringify({
     prevHash,
     id: fields.id,
     userId: fields.userId,
     workspaceId: fields.workspaceId,
+    ...scope,
     action: fields.action,
     resource: fields.resource,
     resourceId: fields.resourceId,
-    metadata: fields.metadata ?? null,
+    metadata: version >= 2 ? canonicalJson(fields.metadata ?? null) : (fields.metadata ?? null),
     ipAddress: fields.ipAddress,
     userAgent: fields.userAgent,
     createdAt: fields.createdAt.toISOString(),
@@ -48,7 +70,11 @@ export function computeAuditHash(
 
 @Injectable()
 export class PrismaAuditLogsRepository extends AuditLogsRepository {
-  constructor(private prisma: PrismaService) {
+  // Writes and chain maintenance span every tenant, so they use the raw client; listing is scoped.
+  constructor(
+    private prisma: PrismaService,
+    private scoped: ScopedPrismaService,
+  ) {
     super();
   }
 
@@ -70,6 +96,8 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
         id,
         userId: data.userId ?? null,
         workspaceId: data.workspaceId ?? null,
+        organizationId: data.organizationId ?? null,
+        clientId: data.clientId ?? null,
         action: data.action,
         resource: data.resource ?? null,
         resourceId: data.resourceId ?? null,
@@ -84,6 +112,8 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
           id,
           userId: data.userId,
           workspaceId: data.workspaceId,
+          organizationId: data.organizationId,
+          clientId: data.clientId,
           action: data.action,
           resource: data.resource,
           resourceId: data.resourceId,
@@ -93,6 +123,7 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
           createdAt,
           prevHash,
           hash,
+          hashVersion: CURRENT_AUDIT_HASH_VERSION,
         },
       });
       return this.toEntity(log);
@@ -119,13 +150,13 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
     }
 
     const [items, total] = await Promise.all([
-      this.prisma.auditLog.findMany({
+      this.scoped.client.auditLog.findMany({
         where,
         skip: (params.page - 1) * params.limit,
         take: params.limit,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.auditLog.count({ where }),
+      this.scoped.client.auditLog.count({ where }),
     ]);
 
     return {
@@ -163,6 +194,8 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
       id: raw.id,
       userId: raw.userId,
       workspaceId: raw.workspaceId,
+      organizationId: raw.organizationId,
+      clientId: raw.clientId,
       action: raw.action,
       resource: raw.resource,
       resourceId: raw.resourceId,
@@ -171,6 +204,7 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
       userAgent: raw.userAgent,
       prevHash: raw.prevHash,
       hash: raw.hash,
+      hashVersion: raw.hashVersion,
       createdAt: raw.createdAt,
     };
   }

@@ -1,3 +1,4 @@
+import { inScope } from '@test/helpers/tenant-scope';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UpdateMemberRoleUseCase } from './update-member-role.use-case';
 import { WorkspaceMembersRepository } from '../repositories/workspace-members.repository.interface';
@@ -23,7 +24,7 @@ function setup() {
     invalidateTokens: jest.fn(),
   } as unknown as jest.Mocked<UsersRepository>;
   return {
-    useCase: new UpdateMemberRoleUseCase(members, workspaces, roles, users),
+    useCase: inScope(new UpdateMemberRoleUseCase(members, workspaces, roles, users)),
     members,
     workspaces,
     roles,
@@ -36,6 +37,8 @@ const baseMember = (overrides: Partial<WorkspaceMember> = {}): WorkspaceMember =
   userId: 'u2',
   workspaceId: 'w1',
   roleId: 'r1',
+  clientId: null,
+  advertiserId: null,
   joinedAt: new Date(),
   ...overrides,
 });
@@ -96,5 +99,21 @@ describe('UpdateMemberRoleUseCase', () => {
 
     expect(members.updateRole).toHaveBeenCalledWith('m1', 'r2');
     expect(users.invalidateTokens).toHaveBeenCalledWith('u2');
+  });
+
+  it('keeps a custom role with invite permission away from a client membership', async () => {
+    const { useCase, members, workspaces, roles } = setup();
+    members.findById.mockResolvedValue(baseMember({ clientId: 'client-a' }));
+    workspaces.findById.mockResolvedValue(baseWorkspace());
+    roles.findByIdInWorkspace.mockResolvedValue({
+      id: 'r-custom',
+      name: 'inviter',
+      permissions: [{ key: 'workspace:read' }, { key: 'workspace:invite' }],
+    } as RoleWithPermissions);
+
+    await expect(
+      useCase.execute({ workspaceId: 'w1', memberId: 'm1', roleId: 'r-custom' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(members.updateRole).not.toHaveBeenCalled();
   });
 });

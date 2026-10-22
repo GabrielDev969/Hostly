@@ -1,5 +1,4 @@
 import { UsersRepository } from '@modules/users/repositories/users.repository.interface';
-import { CreateWorkspaceUseCase } from '@modules/workspaces/use-cases/create-workspace.use-case';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { CryptoUtil } from '@shared/utils/crypto.util';
 import { MetricsService } from '@shared/metrics/metrics.service';
@@ -15,7 +14,6 @@ interface RegisterInput {
 export class RegisterUseCase {
   constructor(
     private users: UsersRepository,
-    private createWorkspace: CreateWorkspaceUseCase,
     private metrics: MetricsService,
     private requestEmailVerification: RequestEmailVerificationUseCase,
   ) {}
@@ -34,12 +32,8 @@ export class RegisterUseCase {
       passwordHash,
     });
 
-    await this.createWorkspace.execute({
-      userId: user.id,
-      name: `${input.name}'s Workspace`,
-      isPersonal: true,
-    });
-
+    // No personal workspace: in Hostly a workspace is an operator tenant, created by the seed.
+    // New users only gain access through an invitation.
     await this.requestEmailVerification.execute(user.id);
 
     this.metrics.incRegister('success');

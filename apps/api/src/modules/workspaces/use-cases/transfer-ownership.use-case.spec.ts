@@ -44,11 +44,13 @@ const targetMember = {
   id: 'm-target',
   userId: 'u-new',
   workspaceId: 'w1',
+  clientId: null,
+  advertiserId: null,
 } as WorkspaceMember;
 const ownerUser = { id: 'u-owner', passwordHash: 'hash' } as User;
 const workspaceRoles = [
-  { id: 'r-owner', name: 'Owner' } as RoleWithPermissions,
-  { id: 'r-admin', name: 'Admin' } as RoleWithPermissions,
+  { id: 'r-owner', name: 'operator_admin' } as RoleWithPermissions,
+  { id: 'r-staff', name: 'operator_staff' } as RoleWithPermissions,
 ];
 
 const validInput = {
@@ -109,7 +111,7 @@ describe('TransferOwnershipUseCase', () => {
     await expect(useCase.execute(validInput)).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('throws BadRequest when Owner/Admin roles are missing', async () => {
+  it('throws BadRequest when the operator_admin role is missing', async () => {
     const { useCase, workspaces, users, members, roles } = setup();
     workspaces.findById.mockResolvedValue(workspace);
     users.findById.mockResolvedValue(ownerUser);
@@ -132,9 +134,20 @@ describe('TransferOwnershipUseCase', () => {
       fromUserId: 'u-owner',
       toUserId: 'u-new',
       ownerRoleId: 'r-owner',
-      adminRoleId: 'r-admin',
+      adminRoleId: 'r-owner',
     });
     expect(users.invalidateTokens).toHaveBeenCalledWith('u-owner');
     expect(users.invalidateTokens).toHaveBeenCalledWith('u-new');
+  });
+
+  it('refuses to hand ownership to a client-scoped member', async () => {
+    const { useCase, workspaces, users, members, roles } = setup();
+    workspaces.findById.mockResolvedValue(workspace);
+    users.findById.mockResolvedValue(ownerUser);
+    members.findById.mockResolvedValue({ ...targetMember, clientId: 'client-a' });
+    roles.findManyByWorkspace.mockResolvedValue(workspaceRoles);
+
+    await expect(useCase.execute(validInput)).rejects.toBeInstanceOf(BadRequestException);
+    expect(workspaces.transferOwnership).not.toHaveBeenCalled();
   });
 });

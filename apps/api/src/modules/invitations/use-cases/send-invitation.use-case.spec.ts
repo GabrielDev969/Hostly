@@ -1,4 +1,10 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { inScope, OPERATOR_SCOPE } from '@test/helpers/tenant-scope';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { SendInvitationUseCase } from './send-invitation.use-case';
 import { InvitationsRepository } from '../repositories/invitations.repository.interface';
 import { RolesRepository } from '@modules/rbac/repositories/roles.repository.interface';
@@ -37,6 +43,7 @@ describe('SendInvitationUseCase', () => {
       update: jest.fn(),
       delete: jest.fn(),
       countMembersUsingRole: jest.fn(),
+      findMembershipScopesUsingRole: jest.fn().mockResolvedValue([]),
     };
     users = {
       create: jest.fn(),
@@ -61,10 +68,8 @@ describe('SendInvitationUseCase', () => {
       findById: jest.fn(),
       findByUserAndWorkspace: jest.fn(),
       findSuperAdminMembership: jest.fn(),
-      findManyByWorkspace: jest.fn(),
       updateRole: jest.fn(),
       delete: jest.fn(),
-      countByWorkspace: jest.fn(),
       findManyByWorkspaceWithRelations: jest.fn(),
     };
     workspaces = {
@@ -73,13 +78,8 @@ describe('SendInvitationUseCase', () => {
     emailDispatcher = {
       enqueue: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<EmailDispatcher>;
-    useCase = new SendInvitationUseCase(
-      invitations,
-      roles,
-      users,
-      members,
-      workspaces,
-      emailDispatcher,
+    useCase = inScope(
+      new SendInvitationUseCase(invitations, roles, users, members, workspaces, emailDispatcher),
     );
   });
 
@@ -161,6 +161,24 @@ describe('SendInvitationUseCase', () => {
     } as Awaited<ReturnType<InvitationsRepository['findPendingByEmailAndWorkspace']>>);
 
     await expect(useCase.execute(input)).rejects.toBeInstanceOf(ConflictException);
+    expect(invitations.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses invitations from client users (operator memberships need an operator grantor)', async () => {
+    roles.findByIdInWorkspace.mockResolvedValue(role);
+    const asClient = inScope(
+      new SendInvitationUseCase(invitations, roles, users, members, workspaces, emailDispatcher),
+      { ...OPERATOR_SCOPE, clientId: 'client-a' },
+    );
+
+    await expect(asClient.execute(input)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(invitations.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses client-scoped system roles in an invitation', async () => {
+    roles.findByIdInWorkspace.mockResolvedValue({ ...role, name: 'client_admin', isSystem: true });
+
+    await expect(useCase.execute(input)).rejects.toBeInstanceOf(BadRequestException);
     expect(invitations.create).not.toHaveBeenCalled();
   });
 });

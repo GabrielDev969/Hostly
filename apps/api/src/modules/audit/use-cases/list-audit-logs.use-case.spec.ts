@@ -10,6 +10,8 @@ describe('ListAuditLogsUseCase', () => {
     id: 'log1',
     userId: 'u1',
     workspaceId: 'w1',
+    organizationId: 'org1',
+    clientId: null,
     action: 'user.created',
     resource: 'User',
     resourceId: 'u2',
@@ -18,6 +20,7 @@ describe('ListAuditLogsUseCase', () => {
     userAgent: 'jest',
     createdAt: new Date(),
     prevHash: null,
+    hashVersion: 2,
     hash: 'hash',
     ...overrides,
   });

@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InvitationsRepository } from '../repositories/invitations.repository.interface';
 import { RolesRepository } from '@modules/rbac/repositories/roles.repository.interface';
+import { assertCanGrant, assertRoleFitsScope } from '@modules/rbac/constants/roles';
+import { TenantContext } from '@shared/tenancy/tenant-context';
 import { UsersRepository } from '@modules/users/repositories/users.repository.interface';
 import { WorkspaceMembersRepository } from '@modules/workspaces/repositories/workspace-members.repository.interface';
 import { WorkspacesRepository } from '@modules/workspaces/repositories/workspaces.repository.interface';
@@ -32,6 +34,10 @@ export class SendInvitationUseCase {
   async execute(input: SendInvitationInput): Promise<InvitationResponseDto> {
     const role = await this.roles.findByIdInWorkspace(input.roleId, input.workspaceId);
     if (!role) throw new NotFoundException('Role not found in this workspace');
+    // Invitations carry no client/advertiser yet (#16), so they only create operator memberships.
+    const membership = { clientId: null, advertiserId: null };
+    assertCanGrant(TenantContext.scope, membership);
+    assertRoleFitsScope(role, membership);
 
     const existingUser = await this.users.findByEmail(input.email);
     if (existingUser) {

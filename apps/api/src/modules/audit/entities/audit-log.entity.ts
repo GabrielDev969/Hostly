@@ -2,6 +2,8 @@ export class AuditLog {
   id: string;
   userId: string | null;
   workspaceId: string | null;
+  organizationId: string | null;
+  clientId: string | null;
   action: string;
   resource: string | null;
   resourceId: string | null;
@@ -11,5 +13,6 @@ export class AuditLog {
   userAgent: string | null;
   prevHash: string | null;
   hash: string;
+  hashVersion: number;
   createdAt: Date;
 }

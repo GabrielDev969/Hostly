@@ -47,18 +47,24 @@ export class VerifyAuditChainUseCase {
           };
         }
 
-        const recomputed = computeAuditHash(log.prevHash, {
-          id: log.id,
-          userId: log.userId,
-          workspaceId: log.workspaceId,
-          action: log.action,
-          resource: log.resource,
-          resourceId: log.resourceId,
-          metadata: log.metadata,
-          ipAddress: log.ipAddress,
-          userAgent: log.userAgent,
-          createdAt: log.createdAt,
-        });
+        const recomputed = computeAuditHash(
+          log.prevHash,
+          {
+            id: log.id,
+            userId: log.userId,
+            workspaceId: log.workspaceId,
+            organizationId: log.organizationId,
+            clientId: log.clientId,
+            action: log.action,
+            resource: log.resource,
+            resourceId: log.resourceId,
+            metadata: log.metadata,
+            ipAddress: log.ipAddress,
+            userAgent: log.userAgent,
+            createdAt: log.createdAt,
+          },
+          log.hashVersion,
+        );
 
         if (recomputed !== log.hash) {
           return {

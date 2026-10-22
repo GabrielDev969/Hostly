@@ -5,6 +5,7 @@ import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/te
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
+import { provisionOperator } from './helpers/operator';
 
 describe('Users CRUD (e2e)', () => {
   let app: INestApplication;
@@ -36,6 +37,7 @@ describe('Users CRUD (e2e)', () => {
       name: 'Owner',
       password: 'StrongPass@123',
     });
+    await provisionOperator(app, 'owner@example.com');
     const login = await request(server)
       .post('/api/v1/auth/login')
       .send({ email: 'owner@example.com', password: 'StrongPass@123' })
@@ -51,17 +53,17 @@ describe('Users CRUD (e2e)', () => {
       .get('/api/v1/rbac/roles')
       .set('Authorization', `Bearer ${accessToken}`)
       .set('x-workspace-id', workspaceId);
-    const memberRoleId = (
-      rolesRes.body.find((r: { name: string }) => r.name === 'Member') as {
+    const staffRoleId = (
+      rolesRes.body.find((r: { name: string }) => r.name === 'operator_staff') as {
         id: string;
       }
     ).id;
 
-    return { accessToken, workspaceId, memberRoleId };
+    return { accessToken, workspaceId, staffRoleId };
   }
 
   it('POST /users creates a user in the workspace and assigns a role', async () => {
-    const { accessToken, workspaceId, memberRoleId } = await setup();
+    const { accessToken, workspaceId, staffRoleId } = await setup();
 
     const res = await request(server)
       .post('/api/v1/users')
@@ -71,7 +73,7 @@ describe('Users CRUD (e2e)', () => {
         email: 'newbie@example.com',
         name: 'New Member',
         password: 'StrongPass@123',
-        roleId: memberRoleId,
+        roleId: staffRoleId,
       })
       .expect(201);
 
@@ -83,7 +85,7 @@ describe('Users CRUD (e2e)', () => {
   });
 
   it('GET /users lists users in the workspace (paginated)', async () => {
-    const { accessToken, workspaceId, memberRoleId } = await setup();
+    const { accessToken, workspaceId, staffRoleId } = await setup();
 
     await request(server)
       .post('/api/v1/users')
@@ -93,7 +95,7 @@ describe('Users CRUD (e2e)', () => {
         email: 'a@example.com',
         name: 'Alice',
         password: 'StrongPass@123',
-        roleId: memberRoleId,
+        roleId: staffRoleId,
       })
       .expect(201);
 
@@ -111,7 +113,7 @@ describe('Users CRUD (e2e)', () => {
   });
 
   it('PATCH /users/:id updates the name', async () => {
-    const { accessToken, workspaceId, memberRoleId } = await setup();
+    const { accessToken, workspaceId, staffRoleId } = await setup();
     const created = await request(server)
       .post('/api/v1/users')
       .set('Authorization', `Bearer ${accessToken}`)
@@ -120,7 +122,7 @@ describe('Users CRUD (e2e)', () => {
         email: 'a@example.com',
         name: 'Alice',
         password: 'StrongPass@123',
-        roleId: memberRoleId,
+        roleId: staffRoleId,
       });
     const userId = created.body.id as string;
 
@@ -149,7 +151,7 @@ describe('Users CRUD (e2e)', () => {
   });
 
   it('DELETE /users/:id soft-deletes a non-owner user', async () => {
-    const { accessToken, workspaceId, memberRoleId } = await setup();
+    const { accessToken, workspaceId, staffRoleId } = await setup();
     const created = await request(server)
       .post('/api/v1/users')
       .set('Authorization', `Bearer ${accessToken}`)
@@ -158,7 +160,7 @@ describe('Users CRUD (e2e)', () => {
         email: 'a@example.com',
         name: 'Alice',
         password: 'StrongPass@123',
-        roleId: memberRoleId,
+        roleId: staffRoleId,
       });
     const userId = created.body.id as string;
 

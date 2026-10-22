@@ -1,9 +1,16 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/test-database';
+import {
+  startTestDatabase,
+  stopTestDatabase,
+  resetDatabase,
+  getPrisma,
+} from './helpers/test-database';
+import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
+import { provisionOperator } from './helpers/operator';
 import { JwtService } from '@nestjs/jwt';
 import { __TEST_JWT_KEYS__ } from './env';
 
@@ -27,6 +34,7 @@ describe('Auth flow (e2e)', () => {
 
   beforeEach(async () => {
     await resetDatabase();
+    await seedPermissions();
     emailDispatcher.reset();
   });
 
@@ -36,7 +44,7 @@ describe('Auth flow (e2e)', () => {
     password: 'StrongPass@123',
   };
 
-  it('POST /auth/v1/register creates a user and a personal workspace', async () => {
+  it('POST /auth/v1/register creates a user without any workspace or organization', async () => {
     const res = await request(server).post('/api/v1/auth/register').send(credentials).expect(201);
 
     expect(res.body).toMatchObject({
@@ -45,6 +53,12 @@ describe('Auth flow (e2e)', () => {
       name: credentials.name,
     });
     expect(res.body.passwordHash).toBeUndefined();
+
+    const prisma = getPrisma();
+    const userId = res.body.id as string;
+    expect(await prisma.workspaceMember.count({ where: { userId } })).toBe(0);
+    expect(await prisma.workspace.count({ where: { ownerId: userId } })).toBe(0);
+    expect(await prisma.organization.count({ where: { ownerId: userId } })).toBe(0);
   });
 
   it('POST /auth/v1/register rejects duplicate email with 409', async () => {
@@ -97,11 +111,22 @@ describe('Auth flow (e2e)', () => {
       .post('/api/v1/auth/login')
       .send({ email: credentials.email, password: credentials.password })
       .expect(200);
+    const auth = `Bearer ${login.body.accessToken}`;
 
-    const me = await request(server)
+    const before = await request(server)
       .get('/api/v1/auth/me')
-      .set('Authorization', `Bearer ${login.body.accessToken}`)
+      .set('Authorization', auth)
       .expect(200);
+    expect(before.body.workspaces).toEqual([]);
+    const workspacesBefore = await request(server)
+      .get('/api/v1/workspaces')
+      .set('Authorization', auth)
+      .expect(200);
+    expect(workspacesBefore.body).toEqual([]);
+
+    const workspaceId = await provisionOperator(app, credentials.email, { name: 'Acme Malls' });
+
+    const me = await request(server).get('/api/v1/auth/me').set('Authorization', auth).expect(200);
 
     expect(me.body).toMatchObject({
       email: credentials.email,
@@ -111,8 +136,9 @@ describe('Auth flow (e2e)', () => {
     });
     expect(me.body.workspaces).toHaveLength(1);
     expect(me.body.workspaces[0]).toMatchObject({
-      isPersonal: true,
-      name: "Jane Doe's Workspace",
+      id: workspaceId,
+      isPersonal: false,
+      name: 'Acme Malls',
     });
   });
 
@@ -183,8 +209,6 @@ describe('Auth flow (e2e)', () => {
   });
 
   it('audit log captures register, login success, login failure, and logout', async () => {
-    const { getPrisma } =
-      require('./helpers/test-database') as typeof import('./helpers/test-database');
     const prisma = getPrisma();
 
     await registerAndVerify(server, emailDispatcher, credentials);

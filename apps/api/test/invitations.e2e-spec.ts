@@ -5,6 +5,7 @@ import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/te
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
+import { provisionOperator } from './helpers/operator';
 
 describe('Invitations flow (e2e)', () => {
   let app: INestApplication;
@@ -47,6 +48,7 @@ describe('Invitations flow (e2e)', () => {
 
   it('inviter sends → invitee accepts → invitee becomes member', async () => {
     const inviterToken = await registerAndLogin('inviter@example.com', 'Inviter');
+    await provisionOperator(app, 'inviter@example.com');
 
     const wsList = await request(server)
       .get('/api/v1/workspaces')
@@ -59,16 +61,16 @@ describe('Invitations flow (e2e)', () => {
       .set('Authorization', `Bearer ${inviterToken}`)
       .set('x-workspace-id', workspaceId)
       .expect(200);
-    const memberRole = rolesRes.body.find((r: { name: string }) => r.name === 'Member') as {
+    const staffRole = rolesRes.body.find((r: { name: string }) => r.name === 'operator_staff') as {
       id: string;
     };
-    expect(memberRole).toBeDefined();
+    expect(staffRole).toBeDefined();
 
     const inviteRes = await request(server)
       .post('/api/v1/invitations')
       .set('Authorization', `Bearer ${inviterToken}`)
       .set('x-workspace-id', workspaceId)
-      .send({ email: 'invitee@example.com', roleId: memberRole.id })
+      .send({ email: 'invitee@example.com', roleId: staffRole.id })
       .expect(201);
     const token = inviteRes.body.token as string;
     expect(token).toMatch(/^[0-9a-f]{64}$/);
@@ -87,12 +89,12 @@ describe('Invitations flow (e2e)', () => {
       .set('Authorization', `Bearer ${inviteeToken}`)
       .expect(200);
     const ids = (inviteeWorkspaces.body as { id: string }[]).map((w) => w.id);
-    expect(inviteeWorkspaces.body).toHaveLength(2);
-    expect(ids).toContain(workspaceId);
+    expect(ids).toEqual([workspaceId]);
   });
 
   it('rejects accept when logged-in email does not match the invitation', async () => {
     const inviterToken = await registerAndLogin('inviter@example.com', 'Inviter');
+    await provisionOperator(app, 'inviter@example.com');
 
     const wsList = await request(server)
       .get('/api/v1/workspaces')
@@ -102,7 +104,7 @@ describe('Invitations flow (e2e)', () => {
       .get('/api/v1/rbac/roles')
       .set('Authorization', `Bearer ${inviterToken}`)
       .set('x-workspace-id', workspaceId);
-    const memberRole = rolesRes.body.find((r: { name: string }) => r.name === 'Member') as {
+    const staffRole = rolesRes.body.find((r: { name: string }) => r.name === 'operator_staff') as {
       id: string;
     };
 
@@ -110,7 +112,7 @@ describe('Invitations flow (e2e)', () => {
       .post('/api/v1/invitations')
       .set('Authorization', `Bearer ${inviterToken}`)
       .set('x-workspace-id', workspaceId)
-      .send({ email: 'invitee@example.com', roleId: memberRole.id })
+      .send({ email: 'invitee@example.com', roleId: staffRole.id })
       .expect(201);
     const token = inviteRes.body.token as string;
 
@@ -125,6 +127,7 @@ describe('Invitations flow (e2e)', () => {
 
   it('returns 409 when sending a duplicate pending invitation', async () => {
     const inviterToken = await registerAndLogin('inviter@example.com', 'Inviter');
+    await provisionOperator(app, 'inviter@example.com');
 
     const wsList = await request(server)
       .get('/api/v1/workspaces')
@@ -134,7 +137,7 @@ describe('Invitations flow (e2e)', () => {
       .get('/api/v1/rbac/roles')
       .set('Authorization', `Bearer ${inviterToken}`)
       .set('x-workspace-id', workspaceId);
-    const memberRole = rolesRes.body.find((r: { name: string }) => r.name === 'Member') as {
+    const staffRole = rolesRes.body.find((r: { name: string }) => r.name === 'operator_staff') as {
       id: string;
     };
 
@@ -142,14 +145,39 @@ describe('Invitations flow (e2e)', () => {
       .post('/api/v1/invitations')
       .set('Authorization', `Bearer ${inviterToken}`)
       .set('x-workspace-id', workspaceId)
-      .send({ email: 'invitee@example.com', roleId: memberRole.id })
+      .send({ email: 'invitee@example.com', roleId: staffRole.id })
       .expect(201);
 
     await request(server)
       .post('/api/v1/invitations')
       .set('Authorization', `Bearer ${inviterToken}`)
       .set('x-workspace-id', workspaceId)
-      .send({ email: 'invitee@example.com', roleId: memberRole.id })
+      .send({ email: 'invitee@example.com', roleId: staffRole.id })
       .expect(409);
+  });
+
+  it('rejects inviting with a client-scoped role (400)', async () => {
+    const inviterToken = await registerAndLogin('inviter@example.com', 'Inviter');
+    const workspaceId = await provisionOperator(app, 'inviter@example.com');
+
+    const rolesRes = await request(server)
+      .get('/api/v1/rbac/roles')
+      .set('Authorization', `Bearer ${inviterToken}`)
+      .set('x-workspace-id', workspaceId)
+      .expect(200);
+    const clientAdminRole = rolesRes.body.find(
+      (r: { name: string }) => r.name === 'client_admin',
+    ) as {
+      id: string;
+    };
+    expect(clientAdminRole).toBeDefined();
+
+    const res = await request(server)
+      .post('/api/v1/invitations')
+      .set('Authorization', `Bearer ${inviterToken}`)
+      .set('x-workspace-id', workspaceId)
+      .send({ email: 'invitee@example.com', roleId: clientAdminRole.id })
+      .expect(400);
+    expect(res.body.message).toMatch(/client_admin requires a client membership/);
   });
 });

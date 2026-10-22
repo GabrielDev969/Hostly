@@ -16,23 +16,23 @@ model User {
   twoFactorEnabled Boolean @default(false)
   recoveryCodes    String?
 
-  emailVerifiedAt      DateTime?
-  failedLoginAttempts  Int       @default(0)
-  lockedUntil          DateTime?
-  tokensInvalidatedAt  DateTime?
+  emailVerifiedAt     DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  tokensInvalidatedAt DateTime?
 
-  ownedOrganizations   Organization[]         @relation("OrganizationOwner")
-  ownedWorkspaces      Workspace[]            @relation("WorkspaceOwner")
-  memberships          WorkspaceMember[]
-  sessions             Session[]
-  auditLogs            AuditLog[]
-  invitationsSent      Invitation[]           @relation("InvitedBy")
-  emailVerifyTokens    EmailVerifyToken[]
-  passwordResetTokens  PasswordResetToken[]
-  passwordHistory      PasswordHistory[]
+  ownedOrganizations  Organization[]       @relation("OrganizationOwner")
+  ownedWorkspaces     Workspace[]          @relation("WorkspaceOwner")
+  memberships         WorkspaceMember[]
+  sessions            Session[]
+  auditLogs           AuditLog[]
+  invitationsSent     Invitation[]         @relation("InvitedBy")
+  emailVerifyTokens   EmailVerifyToken[]
+  passwordResetTokens PasswordResetToken[]
+  passwordHistory     PasswordHistory[]
 
-  deletedAt     DateTime?
-  anonymizedAt  DateTime?
+  deletedAt    DateTime?
+  anonymizedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -92,6 +92,7 @@ model Organization {
   owner   User   @relation("OrganizationOwner", fields: [ownerId], references: [id])
 
   workspaces Workspace[]
+  auditLogs  AuditLog[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -102,9 +103,9 @@ model Organization {
 }
 
 model Workspace {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   name           String
-  slug           String @unique
+  slug           String  @unique
   isPersonal     Boolean @default(false)
   ownerId        String
   organizationId String
@@ -129,10 +130,14 @@ model Workspace {
 }
 
 model WorkspaceMember {
-  id          String @id @default(uuid())
-  userId      String
-  workspaceId String
-  roleId      String
+  id           String  @id @default(uuid())
+  userId       String
+  workspaceId  String
+  roleId       String
+  // Tenant scope of the membership: null/null = operator; clientId = client user; both = advertiser.
+  // Foreign keys arrive with the Client (#16) and Advertiser tables.
+  clientId     String?
+  advertiserId String?
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -142,15 +147,17 @@ model WorkspaceMember {
 
   @@unique([userId, workspaceId])
   @@index([workspaceId])
+  @@index([clientId])
+  @@index([advertiserId])
 }
 
 model Invitation {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   email       String
   workspaceId String
   roleId      String
   invitedById String
-  tokenHash   String   @unique
+  tokenHash   String    @unique
   expiresAt   DateTime
   acceptedAt  DateTime?
 
@@ -169,7 +176,7 @@ model Role {
   workspaceId String
   isSystem    Boolean @default(false)
 
-  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   permissions RolePermission[]
   members     WorkspaceMember[]
 
@@ -239,26 +246,34 @@ model Session {
 }
 
 model AuditLog {
-  id          String   @id @default(uuid())
-  userId      String?
-  workspaceId String?
-  action      String
-  resource    String?
-  resourceId  String?
-  metadata    Json?
-  ipAddress   String?
-  userAgent   String?
+  id             String  @id @default(uuid())
+  userId         String?
+  workspaceId    String?
+  organizationId String?
+  clientId       String?
+  action         String
+  resource       String?
+  resourceId     String?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
 
-  prevHash String?
-  hash     String  @unique
+  prevHash    String?
+  hash        String  @unique
+  // 1 = rows hashed before organizationId/clientId existed; 2 = hash covers them too.
+  hashVersion Int     @default(1)
 
-  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
-  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspace    Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  // Restrict, not SetNull: a cascade must never rewrite a row that is already hashed into the chain.
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([workspaceId])
+  @@index([organizationId])
+  @@index([clientId])
   @@index([action])
   @@index([createdAt])
 }

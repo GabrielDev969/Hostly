@@ -5,6 +5,7 @@ import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/te
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
+import { provisionOperator } from './helpers/operator';
 
 describe('RBAC roles flow (e2e)', () => {
   let app: INestApplication;
@@ -36,6 +37,7 @@ describe('RBAC roles flow (e2e)', () => {
       name: 'Owner',
       password: 'StrongPass@123',
     });
+    await provisionOperator(app, 'owner@example.com');
     const login = await request(server)
       .post('/api/v1/auth/login')
       .send({ email: 'owner@example.com', password: 'StrongPass@123' })
@@ -123,18 +125,20 @@ describe('RBAC roles flow (e2e)', () => {
       .set('Authorization', auth)
       .set('x-workspace-id', workspaceId)
       .expect(200);
-    const ownerRole = (list.body as { id: string; name: string }[]).find((r) => r.name === 'Owner');
-    expect(ownerRole).toBeDefined();
+    const adminRole = (list.body as { id: string; name: string }[]).find(
+      (r) => r.name === 'operator_admin',
+    );
+    expect(adminRole).toBeDefined();
 
     await request(server)
-      .patch(`/api/v1/rbac/roles/${ownerRole!.id}`)
+      .patch(`/api/v1/rbac/roles/${adminRole!.id}`)
       .set('Authorization', auth)
       .set('x-workspace-id', workspaceId)
       .send({ name: 'Hacked' })
       .expect(403);
 
     await request(server)
-      .delete(`/api/v1/rbac/roles/${ownerRole!.id}`)
+      .delete(`/api/v1/rbac/roles/${adminRole!.id}`)
       .set('Authorization', auth)
       .set('x-workspace-id', workspaceId)
       .expect(403);
@@ -148,7 +152,7 @@ describe('RBAC roles flow (e2e)', () => {
       .post('/api/v1/rbac/roles')
       .set('Authorization', auth)
       .set('x-workspace-id', workspaceId)
-      .send({ name: 'Owner', permissionKeys: ['user:read'] })
+      .send({ name: 'operator_admin', permissionKeys: ['user:read'] })
       .expect(409);
   });
 });

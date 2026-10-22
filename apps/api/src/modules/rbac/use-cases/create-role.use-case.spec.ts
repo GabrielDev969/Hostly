@@ -1,3 +1,4 @@
+import { inScope } from '@test/helpers/tenant-scope';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { CreateRoleUseCase } from './create-role.use-case';
 import { RolesRepository } from '../repositories/roles.repository.interface';
@@ -12,7 +13,7 @@ describe('CreateRoleUseCase', () => {
       findByNameInWorkspace: jest.fn(),
       create: jest.fn(),
     } as unknown as jest.Mocked<RolesRepository>;
-    useCase = new CreateRoleUseCase(roles);
+    useCase = inScope(new CreateRoleUseCase(roles));
   });
 
   it('throws ConflictException when role name is already taken in the workspace', async () => {

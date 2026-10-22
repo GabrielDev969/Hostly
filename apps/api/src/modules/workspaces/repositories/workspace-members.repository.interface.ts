@@ -4,9 +4,12 @@ export interface CreateWorkspaceMemberData {
   userId: string;
   workspaceId: string;
   roleId: string;
+  clientId?: string | null;
+  advertiserId?: string | null;
 }
 
 export interface WorkspaceMemberWithRelations extends WorkspaceMember {
+  organizationId: string;
   role: {
     id: string;
     name: string;
@@ -36,11 +39,9 @@ export abstract class WorkspaceMembersRepository {
     workspaceId: string,
   ): Promise<WorkspaceMemberWithRelations | null>;
   abstract findSuperAdminMembership(userId: string): Promise<WorkspaceMemberWithRelations | null>;
-  abstract findManyByWorkspace(workspaceId: string): Promise<WorkspaceMember[]>;
   abstract findManyByWorkspaceWithRelations(
     workspaceId: string,
   ): Promise<WorkspaceMemberListItem[]>;
   abstract updateRole(id: string, roleId: string): Promise<WorkspaceMember>;
   abstract delete(id: string): Promise<void>;
-  abstract countByWorkspace(workspaceId: string): Promise<number>;
 }

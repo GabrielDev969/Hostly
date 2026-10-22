@@ -1,3 +1,4 @@
+import { TenantContext } from '@shared/tenancy/tenant-context';
 import { CacheService } from './cache.service';
 
 export interface CacheableOptions<TArgs extends unknown[]> {
@@ -33,7 +34,9 @@ export function Cacheable<TArgs extends unknown[]>(
     const invoke = (self: unknown, args: TArgs): Promise<unknown> => original.apply(self, args);
     descriptor.value = async function (this: unknown, ...args: TArgs): Promise<unknown> {
       const svc = readCacheService(this, propertyKey);
-      const finalKey = await svc.buildKey(options.namespace, options.key(...args));
+      // A result cached for one tenant scope must never be served to another.
+      const scopedKey = TenantContext.cacheKeyPrefix() + options.key(...args);
+      const finalKey = await svc.buildKey(options.namespace, scopedKey);
       return svc.wrap(finalKey, () => invoke(this, args), options.ttlMs);
     };
     return descriptor;

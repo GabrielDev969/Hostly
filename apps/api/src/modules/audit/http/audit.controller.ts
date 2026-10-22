@@ -7,6 +7,7 @@ import { AuditLogResponseDto } from './dto/audit-log-response.dto';
 import { VerifyAuditChainResponseDto } from './dto/verify-audit-chain-response.dto';
 import { WorkspaceGuard } from '@shared/guards/workspace.guard';
 import { PermissionsGuard } from '@shared/guards/permissions.guard';
+import { SuperAdminGuard } from '@shared/guards/super-admin.guard';
 import { RequirePermissions } from '@shared/decorators/require-permissions.decorator';
 import { PERMISSIONS } from '@modules/rbac/constants/permissions';
 import { PaginatedResponseDto } from '@shared/dto/paginated-response.dto';
@@ -28,10 +29,12 @@ export class AuditController {
     private readonly verifyChain: VerifyAuditChainUseCase,
   ) {}
 
+  // The chain spans every tenant, so only the platform super admin may walk it.
   @Get('verify')
+  @UseGuards(SuperAdminGuard)
   @RequirePermissions(PERMISSIONS.AUDIT.READ)
   @ApiOperation({
-    summary: 'Verify the hash chain of audit logs (tamper-evidence). Walks every row.',
+    summary: 'Verify the hash chain of audit logs across all tenants (super admin only).',
   })
   @ApiResponse({ status: 200, type: VerifyAuditChainResponseDto })
   @ApiAuthErrors()

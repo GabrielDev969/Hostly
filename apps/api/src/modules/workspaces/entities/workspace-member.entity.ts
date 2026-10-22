@@ -3,5 +3,7 @@ export class WorkspaceMember {
   userId: string;
   workspaceId: string;
   roleId: string;
+  clientId: string | null;
+  advertiserId: string | null;
   joinedAt: Date;
 }

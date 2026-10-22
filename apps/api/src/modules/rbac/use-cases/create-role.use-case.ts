@@ -2,6 +2,8 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { RolesRepository } from '../repositories/roles.repository.interface';
 import { UnknownPermissionsError } from '../errors/unknown-permissions.error';
 import { RoleResponseDto, toRoleDto } from '../http/dto/role-response.dto';
+import { assertCanManageRoles } from '../constants/roles';
+import { TenantContext } from '@shared/tenancy/tenant-context';
 
 interface CreateRoleInput {
   workspaceId: string;
@@ -15,6 +17,7 @@ export class CreateRoleUseCase {
   constructor(private roles: RolesRepository) {}
 
   async execute(input: CreateRoleInput): Promise<RoleResponseDto> {
+    assertCanManageRoles(TenantContext.scope);
     const existing = await this.roles.findByNameInWorkspace(input.name, input.workspaceId);
     if (existing) throw new ConflictException(`Role "${input.name}" already exists`);
 

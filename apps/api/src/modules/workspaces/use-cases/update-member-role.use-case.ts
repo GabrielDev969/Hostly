@@ -9,6 +9,8 @@ import { WorkspacesRepository } from '../repositories/workspaces.repository.inte
 import { RolesRepository } from '@modules/rbac/repositories/roles.repository.interface';
 import { UsersRepository } from '@modules/users/repositories/users.repository.interface';
 import { WorkspaceMember } from '../entities/workspace-member.entity';
+import { assertCanGrant, assertRoleFitsScope } from '@modules/rbac/constants/roles';
+import { TenantContext } from '@shared/tenancy/tenant-context';
 
 interface UpdateMemberRoleInput {
   workspaceId: string;
@@ -40,6 +42,8 @@ export class UpdateMemberRoleUseCase {
     if (!role) {
       throw new BadRequestException('Role not found in this workspace');
     }
+    assertCanGrant(TenantContext.scope, member);
+    assertRoleFitsScope(role, member);
 
     const updated = await this.members.updateRole(input.memberId, input.roleId);
     await this.users.invalidateTokens(member.userId);

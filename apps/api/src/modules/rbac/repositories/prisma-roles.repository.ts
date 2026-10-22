@@ -3,6 +3,7 @@ import { RolesRepository } from './roles.repository.interface';
 import { UnknownPermissionsError } from '../errors/unknown-permissions.error';
 import type {
   CreateRoleData,
+  MembershipScope,
   UpdateRoleData,
   RoleWithPermissions,
 } from './roles.repository.interface';
@@ -151,6 +152,14 @@ export class PrismaRolesRepository extends RolesRepository {
 
   async countMembersUsingRole(roleId: string): Promise<number> {
     return this.prisma.workspaceMember.count({ where: { roleId } });
+  }
+
+  async findMembershipScopesUsingRole(roleId: string): Promise<MembershipScope[]> {
+    return this.prisma.workspaceMember.findMany({
+      where: { roleId },
+      select: { clientId: true, advertiserId: true },
+      distinct: ['clientId', 'advertiserId'],
+    });
   }
 
   private toRole(raw: PrismaRole): Role {

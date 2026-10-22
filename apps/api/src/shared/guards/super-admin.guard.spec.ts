@@ -24,10 +24,8 @@ describe('SuperAdminGuard', () => {
       findById: jest.fn(),
       findByUserAndWorkspace: jest.fn(),
       findSuperAdminMembership: jest.fn(),
-      findManyByWorkspace: jest.fn(),
       updateRole: jest.fn(),
       delete: jest.fn(),
-      countByWorkspace: jest.fn(),
       findManyByWorkspaceWithRelations: jest.fn(),
     };
     guard = new SuperAdminGuard(members);
@@ -51,6 +49,9 @@ describe('SuperAdminGuard', () => {
       userId: 'u-sa',
       workspaceId: 'w-admin',
       roleId: 'r-sa',
+      clientId: null,
+      advertiserId: null,
+      organizationId: 'org-admin',
       joinedAt: new Date(),
       role: {
         id: 'r-sa',
