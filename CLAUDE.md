@@ -48,7 +48,27 @@ hostly/
 
 ## Comandos
 
-A preencher quando o monorepo existir (#11). Não invente comandos: se um comando não está aqui, ele ainda não existe.
+Não invente comandos: se um comando não está aqui, ele ainda não existe.
+
+Pré-requisito: `nvm use` (Node 24.22.1, fixado no `.nvmrc`). O pnpm 12.15.0 vem do campo `packageManager`.
+
+| Comando | Faz |
+| --- | --- |
+| `pnpm install` | Instala as dependências de todos os pacotes |
+| `pnpm dev` | Sobe em paralelo o `dev` de cada app (cache desligado) |
+| `pnpm build` | Build de tudo, na ordem das dependências, com cache do Turborepo |
+| `pnpm lint` | ESLint (flat config de `@hostly/config/eslint`) |
+| `pnpm typecheck` | `tsc` sem emitir |
+| `pnpm test` | Testes |
+| `pnpm format` / `pnpm format:check` | Prettier escreve / confere (ignora `*.md` e `apps/robot`) |
+| `pnpm turbo run <tarefa> --filter <pacote>` | Roda uma tarefa num pacote só, ex.: `--filter @hostly/config` |
+
+Configs compartilhadas em `packages/config`: `tsconfig/base.json`, `tsconfig/node.json` (API e worker),
+`tsconfig/nextjs.json` (painel), `eslint` e `prettier`. No `eslint.config.js` de cada app, somar
+`parserOptions.tsconfigRootDir: import.meta.dirname`.
+
+Ainda não existem: api, web e worker entram no `pnpm dev` quando nascerem (#15, #19, #30); Docker Compose (#12);
+`apps/robot` é Gradle, fora do pnpm, e os comandos dele chegam na #23.
 
 ## Regras críticas
 
