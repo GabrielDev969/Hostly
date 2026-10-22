@@ -85,6 +85,19 @@ A API (`apps/api`) tem regras próprias em [`apps/api/CLAUDE.md`](apps/api/CLAUD
 existem: web e worker entram no `pnpm dev` quando nascerem (#19, #30); `apps/robot` é Gradle, fora do pnpm, e os
 comandos dele chegam na #23.
 
+## CI
+
+`.github/workflows/ci.yml` roda em todo PR pra `main` e em todo push na `main`, com os mesmos comandos da tabela acima
+e sem nenhum segredo (o `apps/api/test/env.ts` gera as chaves dos testes):
+
+- **`verify`**: `pnpm install --frozen-lockfile`, `format:check`, `lint`, `typecheck`, `build` e `test`.
+- **`e2e`**: `pnpm install --frozen-lockfile` e `test:e2e` (Testcontainers no Docker do runner), em paralelo ao `verify`.
+
+O ruleset `main` exige PR (sem aprovação, porque o dono trabalha sozinho) e os checks `verify` e `e2e` verdes, bloqueia
+force push e exclusão da branch, e não tem bypass. Numa emergência, o dono põe o ruleset em *Disabled* (Settings →
+Rules) e religa depois. Renomear um job quebra o check exigido: atualize o ruleset junto. As actions vão fixadas por SHA
+e o Dependabot (`.github/dependabot.yml`) abre PR semanal pra atualizá-las.
+
 ## Regras críticas
 
 1. O alvo é RobotOS: nenhuma dependência do AgentOS SDK. (spec → "Preparado pro AgentOS")
