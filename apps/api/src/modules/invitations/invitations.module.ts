@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { UsersModule } from '@modules/users/users.module';
 import { WorkspacesModule } from '@modules/workspaces/workspaces.module';
 import { RbacModule } from '@modules/rbac/rbac.module';
+import { ClientsModule } from '@modules/clients/clients.module';
 import { InvitationsRepository } from './repositories/invitations.repository.interface';
 import { PrismaInvitationsRepository } from './repositories/prisma-invitations.repository';
 import { InvitationsController } from './http/invitations.controller';
@@ -11,7 +12,7 @@ import { AcceptInvitationUseCase } from './use-cases/accept-invitation.use-case'
 import { RevokeInvitationUseCase } from './use-cases/revoke-invitation.use-case';
 
 @Module({
-  imports: [UsersModule, WorkspacesModule, RbacModule],
+  imports: [UsersModule, WorkspacesModule, RbacModule, ClientsModule],
   controllers: [InvitationsController],
   providers: [
     { provide: InvitationsRepository, useClass: PrismaInvitationsRepository },

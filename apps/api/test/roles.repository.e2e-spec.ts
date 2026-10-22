@@ -48,6 +48,7 @@ describe('PrismaRolesRepository (integration)', () => {
       isPersonal: false,
       ownerId: owner.id,
       ownerRoleName: 'Owner',
+      internalClientName: 'Own robots',
       defaultRoles: [
         {
           name: 'Owner',

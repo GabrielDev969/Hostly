@@ -86,6 +86,7 @@ export class InvitationsController {
   })
   @ApiValidationError()
   @ApiAuthErrors()
+  @ApiNotFoundError('Client')
   @ApiConflictError('Already a member or pending invite')
   @ApiServerError()
   async send(
@@ -97,6 +98,7 @@ export class InvitationsController {
       workspaceId: workspace.id,
       email: dto.email,
       roleId: dto.roleId,
+      clientId: dto.clientId ?? null,
       invitedById: user.id,
     });
   }

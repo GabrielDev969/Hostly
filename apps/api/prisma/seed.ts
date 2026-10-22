@@ -74,6 +74,18 @@ const PERMISSIONS = [
     category: 'audit',
     description: 'View audit logs',
   },
+
+  // Clients
+  { key: 'client:read', category: 'client', description: 'View clients' },
+  { key: 'client:create', category: 'client', description: 'Create clients' },
+  { key: 'client:update', category: 'client', description: 'Update clients' },
+  { key: 'client:delete', category: 'client', description: 'Delete clients' },
+
+  // Sites
+  { key: 'site:read', category: 'site', description: 'View sites' },
+  { key: 'site:create', category: 'site', description: 'Create sites' },
+  { key: 'site:update', category: 'site', description: 'Update sites' },
+  { key: 'site:delete', category: 'site', description: 'Delete sites' },
 ];
 
 interface SuperAdminEnv {
@@ -123,6 +135,26 @@ function readOperatorEnv(): { name: string; slug: string } {
     throw new Error('SEED_OPERATOR_NAME and SEED_OPERATOR_SLUG must be defined in .env');
   }
   return { name, slug };
+}
+
+function readInternalClientName(): string {
+  const name = process.env.SEED_INTERNAL_CLIENT_NAME;
+  if (!name) throw new Error('SEED_INTERNAL_CLIENT_NAME must be defined in .env');
+  return name;
+}
+
+// The operator's own robots (fair, demo, event) live under its internal client; the database keeps
+// it unique per organization, always active and never deleted.
+async function seedInternalClient(organizationId: string): Promise<void> {
+  const name = readInternalClientName();
+  const existing = await prisma.client.findFirst({ where: { organizationId, isInternal: true } });
+  if (existing) {
+    await prisma.client.update({ where: { id: existing.id }, data: { name } });
+  } else {
+    await prisma.client.create({
+      data: { organizationId, name, status: 'active', isInternal: true },
+    });
+  }
 }
 
 // The operator (Organization) with its single workspace, the five Hostly roles and the admin as
@@ -178,6 +210,8 @@ async function seedOperator(adminEmail: string): Promise<void> {
     update: { roleId: ownerRoleId, clientId: null, advertiserId: null },
     create: { userId: admin.id, workspaceId: workspace.id, roleId: ownerRoleId },
   });
+
+  await seedInternalClient(organization.id);
 
   console.log(`✅ Operator "${operator.name}" provisioned with ${adminEmail} as ${OWNER_ROLE}`);
 }

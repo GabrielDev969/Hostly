@@ -8,6 +8,7 @@ import { DEFAULT_ROLES, OWNER_ROLE } from '@modules/rbac/constants/roles';
 interface CreateWorkspaceInput {
   userId: string;
   name: string;
+  internalClientName: string;
   isPersonal?: boolean;
 }
 
@@ -25,6 +26,7 @@ export class CreateWorkspaceUseCase {
       ownerId: input.userId,
       ownerRoleName: OWNER_ROLE,
       defaultRoles: DEFAULT_ROLES,
+      internalClientName: input.internalClientName,
     });
 
     return result.workspace;

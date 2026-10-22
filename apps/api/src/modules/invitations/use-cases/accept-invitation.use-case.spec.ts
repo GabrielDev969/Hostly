@@ -23,6 +23,7 @@ describe('AcceptInvitationUseCase', () => {
     workspaceId: 'w1',
     roleId: 'r1',
     invitedById: 'inviter',
+    clientId: null,
     tokenHash: 'hash',
     expiresAt: new Date(Date.now() + 60_000),
     acceptedAt: null,
@@ -101,8 +102,19 @@ describe('AcceptInvitationUseCase', () => {
       userId: 'u1',
       workspaceId: 'w1',
       roleId: 'r1',
+      clientId: null,
     });
     expect(invitations.markAsAccepted).toHaveBeenCalledWith('i1');
+  });
+
+  it("puts the new membership in the invitation's client", async () => {
+    invitations.findByTokenHash.mockResolvedValue(baseInvitation({ clientId: 'client-a' }));
+    users.findById.mockResolvedValue(baseUser());
+    members.findByUserAndWorkspace.mockResolvedValue(null);
+
+    await useCase.execute({ token: 'tok', userId: 'u1' });
+
+    expect(members.create).toHaveBeenCalledWith(expect.objectContaining({ clientId: 'client-a' }));
   });
 
   it('throws 404 when token is invalid', async () => {

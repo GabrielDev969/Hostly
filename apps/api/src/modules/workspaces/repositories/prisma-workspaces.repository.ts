@@ -39,6 +39,14 @@ export class PrismaWorkspacesRepository extends WorkspacesRepository {
           organizationId: organization.id,
         },
       });
+      await tx.client.create({
+        data: {
+          organizationId: organization.id,
+          name: data.internalClientName,
+          status: 'active',
+          isInternal: true,
+        },
+      });
 
       const allKeys = [...new Set(data.defaultRoles.flatMap((r) => r.permissionKeys))];
       const perms = await tx.permission.findMany({

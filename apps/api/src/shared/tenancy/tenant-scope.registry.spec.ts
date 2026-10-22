@@ -12,13 +12,15 @@ const RAW_ACCESS_ALLOWLIST: Record<string, string> = {
   'src/modules/workspaces/repositories/prisma-workspace-members.repository.ts':
     'membership lookups feed the WorkspaceGuard before a scope exists; listings and findById use the scoped client',
   'src/modules/workspaces/repositories/prisma-workspaces.repository.ts':
-    'creates the tenant with its owner membership and moves ownership between operator members',
+    'creates the tenant with its owner membership and internal client, and moves ownership between operator members',
   'src/modules/audit/repositories/prisma-audit-logs.repository.ts':
     'the append-only hash chain, retention and verification span every tenant; listing uses the scoped client',
   'src/modules/rbac/repositories/prisma-roles.repository.ts':
     'counts memberships of a role to block deleting a role that is still in use',
   'src/modules/users/repositories/prisma-users.repository.ts':
     'user listings filter by membership; only operator-scoped memberships can hold user:* (see PERMISSION_CEILING)',
+  'src/modules/invitations/repositories/prisma-invitations.repository.ts':
+    'accepting resolves and closes the invitation by token before the user has a membership; the rest uses the scoped client',
   'src/modules/organizations/repositories/prisma-organizations.repository.ts':
     'resolves organizations by id, slug or owner for identity flows; creating a tenant is system work',
 };
@@ -93,6 +95,12 @@ describe('tenant scope registry', () => {
       .map((model) => model.name)
       .filter((name) => !SCOPED_MODELS[name]);
     expect(unregistered).toEqual([]);
+  });
+
+  it('scopes clients, sites and invitations by their client column', () => {
+    expect(SCOPED_MODELS.Client?.clientField).toBe('id');
+    expect(SCOPED_MODELS.Site?.clientField).toBe('clientId');
+    expect(SCOPED_MODELS.Invitation?.clientField).toBe('clientId');
   });
 
   const rawScopedAccess = (): string[] =>

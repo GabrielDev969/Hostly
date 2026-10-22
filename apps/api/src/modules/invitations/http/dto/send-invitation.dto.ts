@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, TransformFnParams } from 'class-transformer';
-import { IsEmail, IsUUID, MaxLength } from 'class-validator';
+import { IsEmail, IsOptional, IsUUID, MaxLength } from 'class-validator';
 
 export class SendInvitationDto {
   @ApiProperty({ example: 'newmember@company.com' })
@@ -17,4 +17,14 @@ export class SendInvitationDto {
   })
   @IsUUID('4')
   roleId: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    required: false,
+    description:
+      'Client the new member belongs to; required for client roles, absent for operator roles',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  clientId?: string;
 }

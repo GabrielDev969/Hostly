@@ -28,7 +28,7 @@ export interface DefaultRole {
   permissionKeys: string[];
 }
 
-// Business permissions (clients, robots, media...) are added by the issues that create them.
+// Business permissions (robots, media...) are added by the issues that create them.
 export const DEFAULT_ROLES: DefaultRole[] = [
   {
     name: HOSTLY_ROLES.OPERATOR_ADMIN,
@@ -45,19 +45,26 @@ export const DEFAULT_ROLES: DefaultRole[] = [
       PERMISSIONS.WORKSPACE.READ,
       PERMISSIONS.ROLE.READ,
       PERMISSIONS.AUDIT.READ,
+      PERMISSIONS.CLIENT.READ,
+      PERMISSIONS.SITE.READ,
     ],
   },
   {
     name: HOSTLY_ROLES.CLIENT_ADMIN,
     description: 'Client administrator: only their own client',
     isSystem: true,
-    permissionKeys: [PERMISSIONS.WORKSPACE.READ, PERMISSIONS.AUDIT.READ],
+    permissionKeys: [
+      PERMISSIONS.WORKSPACE.READ,
+      PERMISSIONS.AUDIT.READ,
+      PERMISSIONS.CLIENT.READ,
+      PERMISSIONS.SITE.READ,
+    ],
   },
   {
     name: HOSTLY_ROLES.CLIENT_EDITOR,
     description: 'Client editor: only their own client, no settings',
     isSystem: true,
-    permissionKeys: [PERMISSIONS.WORKSPACE.READ],
+    permissionKeys: [PERMISSIONS.WORKSPACE.READ, PERMISSIONS.CLIENT.READ, PERMISSIONS.SITE.READ],
   },
   {
     name: HOSTLY_ROLES.ADVERTISER,
@@ -77,9 +84,15 @@ interface ScopeIds {
 // Highest set of permissions a membership of each scope kind may hold, whatever role it gets.
 // Operator memberships are unbounded; client and advertiser ones never reach user, role or invite
 // permissions, which is what keeps operator-only endpoints (and their raw queries) operator-only.
+// Clients read their own client and sites; advertisers stay out of both until the Advertiser issue.
 export const PERMISSION_CEILING: Record<ScopeKind, ReadonlySet<string> | 'any'> = {
   operator: 'any',
-  client: new Set([PERMISSIONS.WORKSPACE.READ, PERMISSIONS.AUDIT.READ]),
+  client: new Set([
+    PERMISSIONS.WORKSPACE.READ,
+    PERMISSIONS.AUDIT.READ,
+    PERMISSIONS.CLIENT.READ,
+    PERMISSIONS.SITE.READ,
+  ]),
   advertiser: new Set([PERMISSIONS.WORKSPACE.READ]),
 };
 

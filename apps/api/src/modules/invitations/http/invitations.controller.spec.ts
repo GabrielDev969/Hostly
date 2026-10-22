@@ -43,8 +43,14 @@ describe('InvitationsController', () => {
       workspaceId: 'w1',
       email: 'jane@x.com',
       roleId: 'r1',
+      clientId: null,
       invitedById: 'u1',
     });
+  });
+
+  it('send forwards the client of a client-user invitation', async () => {
+    await controller.send({ email: 'jane@x.com', roleId: 'r1', clientId: 'c1' }, workspace, user);
+    expect(send.execute).toHaveBeenCalledWith(expect.objectContaining({ clientId: 'c1' }));
   });
 
   it('revoke forwards id and workspace', async () => {

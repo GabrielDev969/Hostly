@@ -22,6 +22,7 @@ type Tx = {
   permission: PermissionClient;
   workspaceMember: WorkspaceMemberClient;
   organization: OrganizationClient;
+  client: { create: jest.Mock };
 };
 
 type PrismaMock = {
@@ -58,6 +59,7 @@ describe('PrismaWorkspacesRepository', () => {
       permission: { findMany: jest.fn() },
       workspaceMember: { create: jest.fn(), findMany: jest.fn() },
       organization: { create: jest.fn().mockResolvedValue({ id: 'org1' }) },
+      client: { create: jest.fn() },
     };
     prisma = {
       workspace: {
@@ -101,6 +103,7 @@ describe('PrismaWorkspacesRepository', () => {
         isPersonal: false,
         ownerId: 'u1',
         ownerRoleName: 'Owner',
+        internalClientName: 'Own robots',
         defaultRoles: [
           {
             name: 'Owner',
@@ -131,6 +134,9 @@ describe('PrismaWorkspacesRepository', () => {
           ownerId: 'u1',
           organizationId: 'org1',
         },
+      });
+      expect(tx.client.create).toHaveBeenCalledWith({
+        data: { organizationId: 'org1', name: 'Own robots', status: 'active', isInternal: true },
       });
       // permissions queried only for the unique union of keys
       const permArg = tx.permission.findMany.mock.calls[0][0] as {
@@ -180,6 +186,7 @@ describe('PrismaWorkspacesRepository', () => {
         isPersonal: true,
         ownerId: 'u1',
         ownerRoleName: 'Owner',
+        internalClientName: 'Own robots',
         defaultRoles: [
           {
             name: 'Owner',
@@ -207,6 +214,7 @@ describe('PrismaWorkspacesRepository', () => {
           isPersonal: false,
           ownerId: 'u1',
           ownerRoleName: 'Owner',
+          internalClientName: 'Own robots',
           defaultRoles: [{ name: 'Member', isSystem: true, permissionKeys: [] }],
         }),
       ).rejects.toThrow('Owner role "Owner" not found in defaultRoles');

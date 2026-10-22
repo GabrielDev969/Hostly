@@ -13,7 +13,7 @@ import {
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
-import { addScopedMember, provisionOperator } from './helpers/operator';
+import { addScopedMember, createClient, provisionOperator } from './helpers/operator';
 import { provisionSuperAdmin } from './helpers/super-admin';
 import type { ScopedPrismaService } from '../src/shared/tenancy/scoped-prisma.service';
 import { TenantContext } from '../src/shared/tenancy/tenant-context';
@@ -115,6 +115,9 @@ describe('Tenant scope (e2e)', () => {
       .organizationId;
     organizationY = (await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceY } }))
       .organizationId;
+
+    await createClient(organizationX, 'Client A', CLIENT_A);
+    await createClient(organizationX, 'Client B', CLIENT_B);
 
     const none = { clientId: null, advertiserId: null };
     await addScopedMember(workspaceX, USERS.opStaffX, 'operator_staff', none);
@@ -664,6 +667,7 @@ describe('Tenant scope (e2e)', () => {
         SUPER_ADMIN_NAME: 'Seed Admin',
         SEED_OPERATOR_NAME: 'Seed Operator',
         SEED_OPERATOR_SLUG: 'seed-operator',
+        SEED_INTERNAL_CLIENT_NAME: 'Seed Operator robots',
       };
       // Async on purpose: blocking the event loop for the seed's duration breaks the app's Redis clients.
       const seed = () => promisify(execFile)('pnpm', ['exec', 'prisma', 'db', 'seed'], { env });
@@ -692,6 +696,19 @@ describe('Tenant scope (e2e)', () => {
         }),
       ]);
       expect(await getPrisma().organization.count({ where: { slug: 'seed-operator' } })).toBe(1);
+
+      const clients = await request(server)
+        .get('/api/v1/clients')
+        .set('Authorization', `Bearer ${token}`)
+        .set('x-workspace-id', operator!.id)
+        .expect(200);
+      expect(clients.body).toEqual([
+        expect.objectContaining({
+          name: 'Seed Operator robots',
+          status: 'active',
+          isInternal: true,
+        }),
+      ]);
     });
   });
 });

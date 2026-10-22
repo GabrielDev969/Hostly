@@ -68,7 +68,7 @@ Pré-requisito: `nvm use` (Node 24.22.1, fixado no `.nvmrc`). O pnpm 12.15.0 vem
 | `pnpm --filter @hostly/api dev` | Sobe só a API em watch (porta `API_PORT`; Swagger em `/docs`) |
 | `pnpm --filter @hostly/api db:migrate` | `prisma migrate dev`: cria e aplica migração em desenvolvimento |
 | `pnpm --filter @hostly/api db:deploy` | `prisma migrate deploy`: aplica as migrações pendentes |
-| `pnpm --filter @hostly/api db:seed` | Seed idempotente: permissões, admin (`SUPER_ADMIN_*`) e a operadora (`SEED_OPERATOR_*`) com o admin como `operator_admin` |
+| `pnpm --filter @hostly/api db:seed` | Seed idempotente: permissões, admin (`SUPER_ADMIN_*`), a operadora (`SEED_OPERATOR_*`) com o admin como `operator_admin` e o cliente interno dela (`SEED_INTERNAL_CLIENT_NAME`) |
 | `docker compose up -d --wait` | Sobe Postgres, Redis e SeaweedFS e espera ficarem saudáveis; o `storage-init` cria o bucket e o CORS logo depois |
 | `docker compose ps -a` | Status dos serviços (`storage-init` termina com `Exited (0)`) |
 | `docker compose logs -f <serviço>` | Logs de um serviço: `postgres`, `redis`, `storage` ou `storage-init` |

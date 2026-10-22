@@ -23,6 +23,18 @@ export const PERMISSIONS = {
   AUDIT: {
     READ: 'audit:read',
   },
+  CLIENT: {
+    READ: 'client:read',
+    CREATE: 'client:create',
+    UPDATE: 'client:update',
+    DELETE: 'client:delete',
+  },
+  SITE: {
+    READ: 'site:read',
+    CREATE: 'site:create',
+    UPDATE: 'site:update',
+    DELETE: 'site:delete',
+  },
 } as const;
 
 export const ALL_PERMISSION_KEYS: string[] = Object.values(PERMISSIONS).flatMap((group) =>
