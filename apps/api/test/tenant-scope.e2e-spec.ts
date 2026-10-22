@@ -14,6 +14,7 @@ import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
 import { addScopedMember, provisionOperator } from './helpers/operator';
+import { provisionSuperAdmin } from './helpers/super-admin';
 import type { ScopedPrismaService } from '../src/shared/tenancy/scoped-prisma.service';
 import { TenantContext } from '../src/shared/tenancy/tenant-context';
 import { TenantScopeError } from '../src/shared/tenancy/tenant-scope.rewriter';
@@ -38,6 +39,8 @@ const USERS = {
 
 type UserKey = keyof typeof USERS;
 
+const SUPER_ADMIN = 'super-admin@example.com';
+
 interface MemberRow {
   id: string;
   user: { email: string };
@@ -53,6 +56,7 @@ describe('Tenant scope (e2e)', () => {
   let workspaceY: string;
   let organizationX: string;
   let organizationY: string;
+  let superAdminToken: string;
 
   const get = (path: string, user: UserKey, workspaceId?: string) => {
     const req = request(server).get(path).set('Authorization', `Bearer ${tokens[user]}`);
@@ -158,6 +162,15 @@ describe('Tenant scope (e2e)', () => {
     });
 
     for (const key of Object.keys(USERS) as UserKey[]) tokens[key] = await login(USERS[key]);
+
+    await registerAndVerify(server, emailDispatcher, {
+      email: SUPER_ADMIN,
+      name: 'Super Admin',
+      password: PASSWORD,
+    });
+    const superAdmin = await prisma.user.findUniqueOrThrow({ where: { email: SUPER_ADMIN } });
+    await provisionSuperAdmin(superAdmin.id);
+    superAdminToken = await login(SUPER_ADMIN);
   });
 
   afterAll(async () => {
@@ -226,6 +239,16 @@ describe('Tenant scope (e2e)', () => {
 
       expect(await memberEmails('opAdminY', workspaceY)).toEqual([USERS.opAdminY]);
       expect(await auditActions('opAdminY', workspaceY)).toEqual(['scope.test.y']);
+    });
+
+    it('keeps the cross-tenant audit chain verification to the super admin', async () => {
+      await get('/api/v1/audit-logs/verify', 'clientAdminA', workspaceX).expect(403);
+      await get('/api/v1/audit-logs/verify', 'opAdminX', workspaceX).expect(403);
+      await request(server)
+        .get('/api/v1/audit-logs/verify')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .set('x-workspace-id', workspaceX)
+        .expect(200);
     });
 
     it('/auth/me and /workspaces of a client user carry nothing from other clients', async () => {
