@@ -1,3 +1,4 @@
+import { inScope } from '@test/helpers/tenant-scope';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AssignPermissionToRoleUseCase } from './assign-permission-to-role.use-case';
 import { RolesRepository } from '../repositories/roles.repository.interface';
@@ -28,6 +29,7 @@ describe('AssignPermissionToRoleUseCase', () => {
       update: jest.fn(),
       delete: jest.fn(),
       countMembersUsingRole: jest.fn(),
+      findMembershipScopesUsingRole: jest.fn().mockResolvedValue([]),
     };
     permissions = {
       findAll: jest.fn(),
@@ -41,7 +43,7 @@ describe('AssignPermissionToRoleUseCase', () => {
       create: jest.fn(),
       delete: jest.fn(),
     };
-    useCase = new AssignPermissionToRoleUseCase(roles, permissions);
+    useCase = inScope(new AssignPermissionToRoleUseCase(roles, permissions));
   });
 
   const baseRole = (perms: Permission[] = [], isSystem = false) => ({

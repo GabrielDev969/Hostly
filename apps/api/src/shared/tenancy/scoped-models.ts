@@ -8,10 +8,26 @@ export interface ScopedModel {
   organizationData: (scope: TenantScope) => Where;
   clientField: string | null;
   advertiserField: string | null;
+  // Tenant roots: every user of the organization may read its own root, but only system work creates one.
+  root?: boolean;
 }
 
 // Every business model must be listed here; tenant-scope.registry.spec.ts fails otherwise.
 export const SCOPED_MODELS: Readonly<Partial<Record<string, ScopedModel>>> = {
+  Organization: {
+    organizationWhere: (scope) => ({ id: scope.organizationId }),
+    organizationData: (scope) => ({ id: scope.organizationId }),
+    clientField: null,
+    advertiserField: null,
+    root: true,
+  },
+  Workspace: {
+    organizationWhere: (scope) => ({ organizationId: scope.organizationId }),
+    organizationData: (scope) => ({ organizationId: scope.organizationId }),
+    clientField: null,
+    advertiserField: null,
+    root: true,
+  },
   WorkspaceMember: {
     organizationWhere: (scope) => ({ workspace: { organizationId: scope.organizationId } }),
     organizationData: (scope) => ({ workspaceId: scope.workspaceId }),
@@ -25,6 +41,3 @@ export const SCOPED_MODELS: Readonly<Partial<Record<string, ScopedModel>>> = {
     advertiserField: null,
   },
 };
-
-// Tenant roots: they carry organizationId but are the boundary itself, resolved by the WorkspaceGuard.
-export const TENANT_ROOT_MODELS: readonly string[] = ['Organization', 'Workspace'];

@@ -1,11 +1,18 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/test-database';
+import { createHash, randomUUID } from 'crypto';
+import {
+  startTestDatabase,
+  stopTestDatabase,
+  resetDatabase,
+  getPrisma,
+} from './helpers/test-database';
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
 import { provisionOperator } from './helpers/operator';
+import { provisionSuperAdmin } from './helpers/super-admin';
 
 describe('Audit logs (e2e)', () => {
   let app: INestApplication;
@@ -115,5 +122,77 @@ describe('Audit logs (e2e)', () => {
     res.body.data.forEach((log: { action: string }) => {
       expect(log.action.startsWith('user.')).toBe(true);
     });
+  });
+
+  it('keeps verifying the chain across rows hashed with the old formula', async () => {
+    const { accessToken, workspaceId } = await setup();
+    const prisma = getPrisma();
+    const workspace = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
+    await prisma.auditLog.deleteMany();
+
+    // A row written before tenant_scope: hashVersion 1, then organizationId backfilled by the migration.
+    const legacy = {
+      id: randomUUID(),
+      userId: null,
+      workspaceId,
+      action: 'legacy.event',
+      resource: null,
+      resourceId: null,
+      metadata: null,
+      ipAddress: null,
+      userAgent: null,
+      createdAt: new Date(Date.now() - 60_000),
+    };
+    const legacyHash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          prevHash: null,
+          id: legacy.id,
+          userId: legacy.userId,
+          workspaceId: legacy.workspaceId,
+          action: legacy.action,
+          resource: legacy.resource,
+          resourceId: legacy.resourceId,
+          metadata: legacy.metadata,
+          ipAddress: legacy.ipAddress,
+          userAgent: legacy.userAgent,
+          createdAt: legacy.createdAt.toISOString(),
+        }),
+      )
+      .digest('hex');
+    await prisma.auditLog.create({
+      data: {
+        ...legacy,
+        metadata: undefined,
+        organizationId: workspace.organizationId,
+        prevHash: null,
+        hash: legacyHash,
+        hashVersion: 1,
+      },
+    });
+
+    // Chained without metadata: rows with multi-key metadata fail verification for an unrelated,
+    // inherited reason (JSONB reorders keys), reported in the PR.
+    const { AuditService } =
+      require('../src/modules/audit/services/audit.service') as typeof import('../src/modules/audit/services/audit.service');
+    await app.get(AuditService).log({
+      action: 'chained.event',
+      workspaceId,
+      organizationId: workspace.organizationId,
+      clientId: 'client-a',
+    });
+    const owner = await prisma.user.findUniqueOrThrow({ where: { email: 'owner@example.com' } });
+    await provisionSuperAdmin(owner.id);
+
+    const res = await request(server)
+      .get('/api/v1/audit-logs/verify')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-workspace-id', workspaceId)
+      .expect(200);
+
+    expect(res.body).toMatchObject({ valid: true, reason: 'ok' });
+    expect(res.body.scanned).toBe(2);
+    const rows = await prisma.auditLog.findMany({ orderBy: { createdAt: 'asc' } });
+    expect(rows.map((r) => r.hashVersion)).toEqual([1, ...rows.slice(1).map(() => 2)]);
   });
 });

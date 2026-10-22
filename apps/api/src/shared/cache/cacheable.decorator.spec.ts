@@ -118,5 +118,18 @@ describe('Cacheable + InvalidateCache decorators', () => {
       expect(asClient.n).toBe(2);
       expect(asClientAgain.n).toBe(2);
     });
+
+    it('keeps system work and unscoped work apart', async () => {
+      const repo = new TestRepo(new CacheService(createCache()));
+
+      const unscoped = await repo.findById('x');
+      const system = await TenantContext.runAsSystem(() => repo.findById('x'));
+      const otherWorkspace = await TenantContext.runWithScope(
+        { ...operator, workspaceId: 'w2' },
+        () => repo.findById('x'),
+      );
+
+      expect([unscoped.n, system.n, otherWorkspace.n]).toEqual([1, 2, 3]);
+    });
   });
 });

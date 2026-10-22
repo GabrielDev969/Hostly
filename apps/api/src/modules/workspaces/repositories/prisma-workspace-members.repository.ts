@@ -8,7 +8,7 @@ import type {
 import { WorkspaceMember } from '../entities/workspace-member.entity';
 import { PrismaService } from '@shared/database/prisma.service';
 import { WorkspaceMember as PrismaWorkspaceMember } from '@prisma/client';
-import { ADMIN_WORKSPACE_SLUG } from '@modules/rbac/constants/system';
+import { ADMIN_WORKSPACE_SLUG, SUPER_ADMIN_ROLE } from '@modules/rbac/constants/system';
 import { Cacheable } from '@shared/cache/cacheable.decorator';
 import { InvalidateCache } from '@shared/cache/invalidate-cache.decorator';
 import { CACHE_NS, CACHE_TTL } from '@shared/cache/cache.constants';
@@ -84,15 +84,9 @@ export class PrismaWorkspaceMembersRepository extends WorkspaceMembersRepository
       select: { id: true },
     });
     if (!adminWorkspace) return null;
-    return this.findByUserAndWorkspace(userId, adminWorkspace.id);
-  }
-
-  async findManyByWorkspace(workspaceId: string): Promise<WorkspaceMember[]> {
-    const members = await this.prisma.workspaceMember.findMany({
-      where: { workspaceId },
-      orderBy: { joinedAt: 'asc' },
-    });
-    return members.map((m) => this.toEntity(m));
+    const membership = await this.findByUserAndWorkspace(userId, adminWorkspace.id);
+    // Any other role in __admin__ must not unlock every workspace.
+    return membership?.role.name === SUPER_ADMIN_ROLE ? membership : null;
   }
 
   async findManyByWorkspaceWithRelations(workspaceId: string): Promise<WorkspaceMemberListItem[]> {
@@ -123,10 +117,6 @@ export class PrismaWorkspaceMembersRepository extends WorkspaceMembersRepository
   @InvalidateCache(CACHE_NS.workspaceMembers)
   async delete(id: string): Promise<void> {
     await this.prisma.workspaceMember.delete({ where: { id } });
-  }
-
-  async countByWorkspace(workspaceId: string): Promise<number> {
-    return this.prisma.workspaceMember.count({ where: { workspaceId } });
   }
 
   private toEntity(raw: PrismaWorkspaceMember): WorkspaceMember {

@@ -83,9 +83,11 @@ describe('PrismaAuditLogsRepository', () => {
           createdAt: Date;
           prevHash: string | null;
           hash: string;
+          hashVersion: number;
         };
       };
       expect(createArgs.data.prevHash).toBe('prev-hash');
+      expect(createArgs.data.hashVersion).toBe(2);
       expect(createArgs.data.hash).toBe(
         computeAuditHash('prev-hash', {
           id: createArgs.data.id,

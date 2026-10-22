@@ -17,6 +17,7 @@ describe('DeleteRoleUseCase', () => {
       update: jest.fn(),
       delete: jest.fn(),
       countMembersUsingRole: jest.fn(),
+      findMembershipScopesUsingRole: jest.fn().mockResolvedValue([]),
     };
     useCase = new DeleteRoleUseCase(roles);
   });

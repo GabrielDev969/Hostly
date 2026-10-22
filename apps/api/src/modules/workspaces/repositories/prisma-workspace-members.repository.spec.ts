@@ -58,7 +58,7 @@ describe('PrismaWorkspaceMembersRepository', () => {
       prisma.workspaceMember.findUnique.mockResolvedValue({
         ...baseMember,
         workspace: { organizationId: 'org1' },
-        role: { id: 'r1', name: 'Owner', isSystem: true, permissions: [] },
+        role: { id: 'r1', name: 'SuperAdmin', isSystem: true, permissions: [] },
       });
       await repo.findByUserAndWorkspace('u1', 'w1');
       await repo.findByUserAndWorkspace('u1', 'w1');
@@ -173,17 +173,17 @@ describe('PrismaWorkspaceMembersRepository', () => {
       });
       expect(result?.role.name).toBe('SuperAdmin');
     });
-  });
 
-  describe('findManyByWorkspace', () => {
-    it('returns mapped members ordered by joinedAt', async () => {
-      prisma.workspaceMember.findMany.mockResolvedValue([baseMember]);
-      const result = await repo.findManyByWorkspace('w1');
-      expect(prisma.workspaceMember.findMany).toHaveBeenCalledWith({
-        where: { workspaceId: 'w1' },
-        orderBy: { joinedAt: 'asc' },
+    it('ignores any other role held in the admin workspace', async () => {
+      prisma.workspace.findUnique.mockResolvedValue({ id: 'admin-ws' });
+      prisma.workspaceMember.findUnique.mockResolvedValue({
+        ...baseMember,
+        workspaceId: 'admin-ws',
+        workspace: { organizationId: 'org-admin' },
+        role: { id: 'r-other', name: 'operator_staff', isSystem: true, permissions: [] },
       });
-      expect(result).toEqual([baseMember]);
+
+      expect(await repo.findSuperAdminMembership('u1')).toBeNull();
     });
   });
 
@@ -231,16 +231,6 @@ describe('PrismaWorkspaceMembersRepository', () => {
       await repo.delete('m1');
       expect(prisma.workspaceMember.delete).toHaveBeenCalledWith({
         where: { id: 'm1' },
-      });
-    });
-  });
-
-  describe('countByWorkspace', () => {
-    it('returns count from prisma', async () => {
-      prisma.workspaceMember.count.mockResolvedValue(7);
-      expect(await repo.countByWorkspace('w1')).toBe(7);
-      expect(prisma.workspaceMember.count).toHaveBeenCalledWith({
-        where: { workspaceId: 'w1' },
       });
     });
   });

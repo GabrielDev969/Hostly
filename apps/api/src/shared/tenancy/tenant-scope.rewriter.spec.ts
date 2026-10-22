@@ -77,6 +77,47 @@ describe('TenantScopeRewriter', () => {
     });
   });
 
+  describe('tenant roots', () => {
+    it('limits Organization and Workspace to the own tenant, for every scope kind', () => {
+      for (const scope of [operator, client, advertiser]) {
+        const rewriter = new TenantScopeRewriter(scope);
+        expect(rewriter.rewrite('Organization', 'findMany', {}).where).toEqual({ id: 'org1' });
+        expect(rewriter.rewrite('Workspace', 'findFirst', { where: { slug: 's' } }).where).toEqual({
+          slug: 's',
+          AND: [{ organizationId: 'org1' }],
+        });
+      }
+    });
+
+    it('refuses to create a tenant through the scoped client', () => {
+      expect(() =>
+        new TenantScopeRewriter(operator).rewrite('Organization', 'create', {
+          data: { name: 'Other', slug: 'other', ownerId: 'u1' },
+        }),
+      ).toThrow(TenantScopeError);
+    });
+  });
+
+  describe('deletes', () => {
+    it.each([
+      ['User', 'delete'],
+      ['Role', 'deleteMany'],
+      ['Workspace', 'delete'],
+      ['Organization', 'deleteMany'],
+    ])('refuses %s.%s because it cascades into scoped rows', (model, operation) => {
+      expect(() =>
+        new TenantScopeRewriter(operator).rewrite(model, operation, { where: { id: 'x' } }),
+      ).toThrow(TenantScopeError);
+    });
+
+    it('still deletes scoped leaf rows inside the scope', () => {
+      const out = new TenantScopeRewriter(client).rewrite('WorkspaceMember', 'delete', {
+        where: { id: 'm1' },
+      });
+      expect(out.where).toEqual({ id: 'm1', AND: [memberScope(client)] });
+    });
+  });
+
   describe('relations loaded through include/select', () => {
     it('filters a list relation into a scoped model from an unscoped model', () => {
       const out = new TenantScopeRewriter(client).rewrite('Workspace', 'findUnique', {
@@ -101,7 +142,13 @@ describe('TenantScopeRewriter', () => {
           include: { role: true },
         },
         ownedOrganizations: {
-          include: { workspaces: { include: { members: { where: memberScope(client) } } } },
+          where: { id: 'org1' },
+          include: {
+            workspaces: {
+              where: { organizationId: 'org1' },
+              include: { members: { where: memberScope(client) } },
+            },
+          },
         },
       });
     });

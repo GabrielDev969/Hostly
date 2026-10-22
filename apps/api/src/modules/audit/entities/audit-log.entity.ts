@@ -13,5 +13,6 @@ export class AuditLog {
   userAgent: string | null;
   prevHash: string | null;
   hash: string;
+  hashVersion: number;
   createdAt: Date;
 }

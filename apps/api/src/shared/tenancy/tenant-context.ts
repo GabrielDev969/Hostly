@@ -38,9 +38,11 @@ export class TenantContext {
     return TenantContext.storage.getStore()?.system ?? false;
   }
 
+  // System work, unscoped work and each scope get disjoint cache keys.
   static cacheKeyPrefix(): string {
+    if (TenantContext.isSystem) return 'system:';
     const scope = TenantContext.scope;
-    if (!scope) return '';
-    return `scope:${scope.organizationId}:${scope.clientId ?? '-'}:${scope.advertiserId ?? '-'}:`;
+    if (!scope) return 'none:';
+    return `scope:${scope.organizationId}:${scope.workspaceId}:${scope.clientId ?? '-'}:${scope.advertiserId ?? '-'}:`;
   }
 }

@@ -24,14 +24,15 @@ describe('TenantContext', () => {
       system: TenantContext.isSystem,
       prefix: TenantContext.cacheKeyPrefix(),
     }));
-    expect(seen).toEqual({ system: true, prefix: '' });
+    expect(seen).toEqual({ system: true, prefix: 'system:' });
+    expect(TenantContext.cacheKeyPrefix()).toBe('none:');
   });
 
   it('only lets the guard set a scope inside a request context', () => {
     expect(() => TenantContext.setScope(scope)).toThrow('outside a request context');
     TenantContext.run(() => {
       TenantContext.setScope(scope);
-      expect(TenantContext.cacheKeyPrefix()).toBe('scope:org1:client-a:-:');
+      expect(TenantContext.cacheKeyPrefix()).toBe('scope:org1:w1:client-a:-:');
     });
   });
 });

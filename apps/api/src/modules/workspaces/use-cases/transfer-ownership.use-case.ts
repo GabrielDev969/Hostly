@@ -58,7 +58,7 @@ export class TransferOwnershipUseCase {
     if (!ownerRole) {
       throw new BadRequestException(`Workspace is missing the ${OWNER_ROLE} role`);
     }
-    assertRoleFitsScope(OWNER_ROLE, target);
+    assertRoleFitsScope(ownerRole, target);
 
     await this.workspaces.transferOwnership({
       workspaceId: input.workspaceId,

@@ -47,6 +47,7 @@ const WHERE_OPERATIONS = new Set([
 ]);
 const CREATE_OPERATIONS = new Set(['create', 'createMany', 'createManyAndReturn']);
 const UPDATE_OPERATIONS = new Set(['update', 'updateMany', 'updateManyAndReturn']);
+const DELETE_OPERATIONS = new Set(['delete', 'deleteMany']);
 
 export class TenantScopeError extends Error {}
 
@@ -74,6 +75,8 @@ export class TenantScopeRewriter {
   rewrite(model: string, operation: string, args: Args): Args {
     const scoped = SCOPED_MODELS[model];
     if (scoped) this.requireScope(model);
+
+    if (DELETE_OPERATIONS.has(operation)) this.assertNoScopedCascade(model);
 
     const out: Args = { ...args };
     if (out.where !== undefined) out.where = this.where(model, out.where);
@@ -106,6 +109,7 @@ export class TenantScopeRewriter {
 
   private scopeWhere(model: string, config: ScopedModel): Where {
     const scope = this.requireScope(model);
+    if (config.root) return config.organizationWhere(scope);
     if (scope.clientId && !config.clientField) {
       throw new ForbiddenException(`${model} is not available to client users`);
     }
@@ -268,6 +272,18 @@ export class TenantScopeRewriter {
     }
   }
 
+  // Deleting a parent of scoped rows would cascade (or set null) into them, possibly in other scopes.
+  private assertNoScopedCascade(model: string): void {
+    const cascade = [...this.relations(model).entries()].find(
+      ([, relation]) => relation.isList && SCOPED_MODELS[relation.target],
+    );
+    if (cascade) {
+      throw new TenantScopeError(
+        `Deleting ${model} would cascade into scoped relation ${cascade[0]}; delete it as system work`,
+      );
+    }
+  }
+
   private assertNoNestedWrites(model: string, data: Args): void {
     const relations = this.relations(model);
     for (const [key, value] of Object.entries(data)) {
@@ -288,6 +304,9 @@ export class TenantScopeRewriter {
     if (!scoped) return data;
 
     const scope = this.requireScope(model);
+    if (scoped.root) {
+      throw new TenantScopeError(`Creating ${model} is system work; use TenantContext.runAsSystem`);
+    }
     const out: Args = { ...data };
     const required: Where = {
       ...scoped.organizationData(scope),

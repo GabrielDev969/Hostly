@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative } from 'path';
 import { Prisma } from '@prisma/client';
-import { SCOPED_MODELS, TENANT_ROOT_MODELS } from './scoped-models';
+import { SCOPED_MODELS } from './scoped-models';
 import { RELATIONS } from './tenant-scope.rewriter';
 
 const API_ROOT = join(__dirname, '..', '..', '..');
@@ -18,8 +18,31 @@ const RAW_ACCESS_ALLOWLIST: Record<string, string> = {
   'src/modules/rbac/repositories/prisma-roles.repository.ts':
     'counts memberships of a role to block deleting a role that is still in use',
   'src/modules/users/repositories/prisma-users.repository.ts':
-    'user listings filter by membership; only operator roles hold user:* permissions',
+    'user listings filter by membership; only operator-scoped memberships can hold user:* (see PERMISSION_CEILING)',
+  'src/modules/organizations/repositories/prisma-organizations.repository.ts':
+    'resolves organizations by id, slug or owner for identity flows; creating a tenant is system work',
 };
+
+const SCOPED_DELEGATES = Object.keys(SCOPED_MODELS).map(
+  (name) => name[0]!.toLowerCase() + name.slice(1),
+);
+const SCOPED_RELATIONS = [...RELATIONS.values()].flatMap((fields) =>
+  [...fields.entries()]
+    .filter(([, relation]) => SCOPED_MODELS[relation.target])
+    .map(([name]) => name),
+);
+const names = (list: string[]) => list.join('|');
+const RAW_CLIENT = /\b(PrismaService|PrismaClient|TransactionClient)\b/;
+const SCOPED_ACCESS = [
+  new RegExp(`\\.(${names(SCOPED_DELEGATES)})\\.`),
+  new RegExp(`\\[\\s*['"\`](${names(SCOPED_DELEGATES)})['"\`]\\s*\\]`),
+  new RegExp(`\\{[^}]*\\b(${names(SCOPED_DELEGATES)})\\b[^}]*\\}\\s*=`),
+  new RegExp(`\\b(${names(SCOPED_RELATIONS)})\\s*:`),
+];
+
+// True when code holds a raw Prisma client and reaches a scoped model by any spelling.
+const touchesScopedRaw = (code: string): boolean =>
+  RAW_CLIENT.test(code) && SCOPED_ACCESS.some((pattern) => pattern.test(code));
 
 function parseSchemaRelations(): Map<string, Map<string, boolean>> {
   const schema = readFileSync(join(API_ROOT, 'prisma', 'schema.prisma'), 'utf8');
@@ -63,30 +86,48 @@ describe('tenant scope registry', () => {
     const unregistered = Prisma.dmmf.datamodel.models
       .filter((model) => model.fields.some((field) => SCOPE_COLUMNS.includes(field.name)))
       .map((model) => model.name)
-      .filter((name) => !SCOPED_MODELS[name] && !TENANT_ROOT_MODELS.includes(name));
+      .filter((name) => !SCOPED_MODELS[name]);
     expect(unregistered).toEqual([]);
   });
 
-  const rawScopedAccess = (): string[] => {
-    const scopedModels = Object.keys(SCOPED_MODELS);
-    const delegates = scopedModels.map((name) => name[0]!.toLowerCase() + name.slice(1));
-    const relationNames = [...RELATIONS.values()].flatMap((fields) =>
-      [...fields.entries()]
-        .filter(([, relation]) => scopedModels.includes(relation.target))
-        .map(([name]) => name),
-    );
-    const delegateUse = new RegExp(`\\.(${delegates.join('|')})\\.`);
-    const relationUse = new RegExp(`\\b(${relationNames.join('|')})\\s*:`);
-
-    return sourceFiles(join(API_ROOT, 'src'))
+  const rawScopedAccess = (): string[] =>
+    sourceFiles(join(API_ROOT, 'src'))
       .map((path) => relative(API_ROOT, path))
       .filter((path) => !path.startsWith('src/shared/tenancy/'))
-      .filter((path) => {
-        const code = readFileSync(join(API_ROOT, path), 'utf8');
-        const usesRawClient = /\bPrismaService\b/.test(code);
-        return usesRawClient && (delegateUse.test(code) || relationUse.test(code));
-      });
-  };
+      .filter((path) => touchesScopedRaw(readFileSync(join(API_ROOT, path), 'utf8')));
+
+  it.each([
+    [
+      'dot access',
+      'constructor(private prisma: PrismaService) {} q() { return this.prisma.auditLog.count(); }',
+    ],
+    [
+      'bracket access',
+      "constructor(private prisma: PrismaService) {} q() { return this.prisma['workspaceMember'].count(); }",
+    ],
+    [
+      'destructuring',
+      'constructor(private prisma: PrismaService) {} q() { const { auditLog } = this.prisma; }',
+    ],
+    [
+      'transaction helper',
+      'function q(tx: Prisma.TransactionClient) { return tx.workspaceMember.findMany(); }',
+    ],
+    [
+      'relation include',
+      'constructor(private prisma: PrismaService) {} q() { return this.prisma.user.findMany({ include: { memberships: true } }); }',
+    ],
+  ])('detects raw access to scoped models through %s', (_, code) => {
+    expect(touchesScopedRaw(code)).toBe(true);
+  });
+
+  it('ignores code that only uses the scoped client', () => {
+    expect(
+      touchesScopedRaw(
+        'constructor(private scoped: ScopedPrismaService) {} q() { return this.scoped.client.auditLog.count(); }',
+      ),
+    ).toBe(false);
+  });
 
   it('keeps raw PrismaService access to scoped models inside the allowlist', () => {
     expect(rawScopedAccess().filter((path) => !RAW_ACCESS_ALLOWLIST[path])).toEqual([]);

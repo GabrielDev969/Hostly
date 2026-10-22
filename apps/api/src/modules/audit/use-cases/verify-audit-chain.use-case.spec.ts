@@ -1,5 +1,6 @@
 import { VerifyAuditChainUseCase } from './verify-audit-chain.use-case';
 import { AuditLogsRepository } from '../repositories/audit-logs.repository.interface';
+import { createHash } from 'crypto';
 import { computeAuditHash } from '../repositories/prisma-audit-logs.repository';
 import type { AuditLog } from '../entities/audit-log.entity';
 
@@ -18,11 +19,30 @@ function makeLog(prevHash: string | null, overrides: Partial<AuditLog> = {}): Au
     userAgent: null,
     prevHash,
     hash: '',
+    hashVersion: 2,
     createdAt: overrides.createdAt ?? new Date('2026-01-01T00:00:00Z'),
     ...overrides,
   };
-  base.hash = computeAuditHash(prevHash, base);
+  base.hash = computeAuditHash(prevHash, base, base.hashVersion);
   return base;
+}
+
+// The boilerplate's original formula, written out independently of computeAuditHash.
+function legacyHash(prevHash: string | null, log: AuditLog): string {
+  const canonical = JSON.stringify({
+    prevHash,
+    id: log.id,
+    userId: log.userId,
+    workspaceId: log.workspaceId,
+    action: log.action,
+    resource: log.resource,
+    resourceId: log.resourceId,
+    metadata: log.metadata ?? null,
+    ipAddress: log.ipAddress,
+    userAgent: log.userAgent,
+    createdAt: log.createdAt.toISOString(),
+  });
+  return createHash('sha256').update(canonical).digest('hex');
 }
 
 function setup(items: AuditLog[]) {
@@ -90,6 +110,36 @@ describe('VerifyAuditChainUseCase', () => {
     expect(result.valid).toBe(false);
     expect(result.reason).toBe('bad_hash');
     expect(result.brokenAt).toBe('b');
+  });
+
+  it('still verifies rows hashed with the old formula after organizationId is backfilled', async () => {
+    const legacy: AuditLog = {
+      ...makeLog(null, { id: 'legacy', workspaceId: 'w1' }),
+      hashVersion: 1,
+    };
+    legacy.hash = legacyHash(null, legacy);
+    // What the tenant_scope migration does to existing rows.
+    legacy.organizationId = 'org1';
+    const next = makeLog(legacy.hash, {
+      id: 'new',
+      workspaceId: 'w1',
+      organizationId: 'org1',
+      clientId: 'client-a',
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+    });
+
+    const result = await setup([legacy, next]).useCase.execute();
+
+    expect(result).toMatchObject({ valid: true, scanned: 2, reason: 'ok' });
+  });
+
+  it('detects tampering with the scope columns of version 2 rows', async () => {
+    const row = makeLog(null, { organizationId: 'org1', clientId: 'client-a' });
+    row.clientId = 'client-b';
+
+    const result = await setup([row]).useCase.execute();
+
+    expect(result).toMatchObject({ valid: false, reason: 'bad_hash' });
   });
 
   it('returns valid=true for an empty chain', async () => {

@@ -258,12 +258,15 @@ model AuditLog {
   ipAddress      String?
   userAgent      String?
 
-  prevHash String?
-  hash     String  @unique
+  prevHash    String?
+  hash        String  @unique
+  // 1 = rows hashed before organizationId/clientId existed; 2 = hash covers them too.
+  hashVersion Int     @default(1)
 
   user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   workspace    Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  // Restrict, not SetNull: a cascade must never rewrite a row that is already hashed into the chain.
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   createdAt DateTime @default(now())
 

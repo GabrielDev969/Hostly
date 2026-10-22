@@ -15,6 +15,11 @@ export interface UpdateRoleData {
   permissionKeys?: string[];
 }
 
+export interface MembershipScope {
+  clientId: string | null;
+  advertiserId: string | null;
+}
+
 export interface RoleWithPermissions extends Role {
   permissions: Permission[];
 }
@@ -31,4 +36,5 @@ export abstract class RolesRepository {
   abstract update(id: string, data: UpdateRoleData): Promise<RoleWithPermissions>;
   abstract delete(id: string): Promise<void>;
   abstract countMembersUsingRole(roleId: string): Promise<number>;
+  abstract findMembershipScopesUsingRole(roleId: string): Promise<MembershipScope[]>;
 }

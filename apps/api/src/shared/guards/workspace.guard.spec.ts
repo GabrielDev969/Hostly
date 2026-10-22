@@ -51,10 +51,8 @@ describe('WorkspaceGuard', () => {
       findById: jest.fn(),
       findByUserAndWorkspace: jest.fn(),
       findSuperAdminMembership: jest.fn(),
-      findManyByWorkspace: jest.fn(),
       updateRole: jest.fn(),
       delete: jest.fn(),
-      countByWorkspace: jest.fn(),
       findManyByWorkspaceWithRelations: jest.fn(),
     };
     workspaces = {

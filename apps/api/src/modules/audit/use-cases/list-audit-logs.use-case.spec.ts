@@ -20,6 +20,7 @@ describe('ListAuditLogsUseCase', () => {
     userAgent: 'jest',
     createdAt: new Date(),
     prevHash: null,
+    hashVersion: 2,
     hash: 'hash',
     ...overrides,
   });

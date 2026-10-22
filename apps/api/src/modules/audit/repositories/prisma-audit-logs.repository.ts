@@ -16,6 +16,9 @@ import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 // audit-log inserts serialize on the chain and can't fork prevHash.
 const CHAIN_LOCK_KEY = 0xa1d11_1067n;
 
+// Version 1 is the boilerplate formula; version 2 also covers organizationId and clientId.
+export const CURRENT_AUDIT_HASH_VERSION = 2;
+
 export function computeAuditHash(
   prevHash: string | null,
   fields: {
@@ -32,14 +35,16 @@ export function computeAuditHash(
     userAgent: string | null;
     createdAt: Date;
   },
+  version: number = CURRENT_AUDIT_HASH_VERSION,
 ): string {
+  const scope =
+    version >= 2 ? { organizationId: fields.organizationId, clientId: fields.clientId } : {};
   const canonical = JSON.stringify({
     prevHash,
     id: fields.id,
     userId: fields.userId,
     workspaceId: fields.workspaceId,
-    organizationId: fields.organizationId,
-    clientId: fields.clientId,
+    ...scope,
     action: fields.action,
     resource: fields.resource,
     resourceId: fields.resourceId,
@@ -106,6 +111,7 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
           createdAt,
           prevHash,
           hash,
+          hashVersion: CURRENT_AUDIT_HASH_VERSION,
         },
       });
       return this.toEntity(log);
@@ -186,6 +192,7 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
       userAgent: raw.userAgent,
       prevHash: raw.prevHash,
       hash: raw.hash,
+      hashVersion: raw.hashVersion,
       createdAt: raw.createdAt,
     };
   }

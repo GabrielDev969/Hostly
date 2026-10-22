@@ -1,3 +1,4 @@
+import { inScope } from '@test/helpers/tenant-scope';
 import {
   BadRequestException,
   ConflictException,
@@ -36,8 +37,9 @@ describe('UpdateRoleUseCase', () => {
       update: jest.fn(),
       delete: jest.fn(),
       countMembersUsingRole: jest.fn(),
+      findMembershipScopesUsingRole: jest.fn().mockResolvedValue([]),
     };
-    useCase = new UpdateRoleUseCase(roles);
+    useCase = inScope(new UpdateRoleUseCase(roles));
   });
 
   it('updates name and description when there is no name conflict', async () => {
@@ -111,5 +113,22 @@ describe('UpdateRoleUseCase', () => {
         permissionKeys: ['user:beam'],
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refuses permissions above the ceiling of memberships already holding the role', async () => {
+    roles.findByIdInWorkspace.mockResolvedValue(baseRole());
+    roles.findMembershipScopesUsingRole.mockResolvedValue([
+      { clientId: null, advertiserId: null },
+      { clientId: 'client-a', advertiserId: null },
+    ]);
+
+    await expect(
+      useCase.execute({
+        id: 'r1',
+        workspaceId: 'w1',
+        permissionKeys: ['workspace:read', 'user:read'],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(roles.update).not.toHaveBeenCalled();
   });
 });

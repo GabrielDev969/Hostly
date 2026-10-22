@@ -269,6 +269,123 @@ describe('Tenant scope (e2e)', () => {
     });
   });
 
+  describe('super admin fallback', () => {
+    it('ignores members of the admin workspace who do not hold the SuperAdmin role', async () => {
+      const prisma = getPrisma();
+      const email = 'admin-auditor@example.com';
+      await registerAndVerify(server, emailDispatcher, {
+        email,
+        name: 'Auditor',
+        password: PASSWORD,
+      });
+      const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+      const adminWorkspace = await prisma.workspace.findUniqueOrThrow({
+        where: { slug: '__admin__' },
+      });
+      const auditorRole = await prisma.role.create({
+        data: { name: 'Auditor', workspaceId: adminWorkspace.id },
+      });
+      await prisma.workspaceMember.create({
+        data: { userId: user.id, workspaceId: adminWorkspace.id, roleId: auditorRole.id },
+      });
+      const token = await login(email);
+
+      await request(server)
+        .get(`/api/v1/workspaces/${workspaceX}/members`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('x-workspace-id', workspaceX)
+        .expect(403);
+      await request(server)
+        .get(`/api/v1/workspaces/${workspaceX}/members`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .set('x-workspace-id', workspaceX)
+        .expect(200);
+    });
+  });
+
+  describe('role ceilings and grantors', () => {
+    const as = (user: UserKey) => ({
+      Authorization: `Bearer ${tokens[user]}`,
+      'x-workspace-id': workspaceX,
+    });
+    const memberId = async (email: string) => {
+      const user = await getPrisma().user.findUniqueOrThrow({ where: { email } });
+      const member = await getPrisma().workspaceMember.findUniqueOrThrow({
+        where: { userId_workspaceId: { userId: user.id, workspaceId: workspaceX } },
+      });
+      return member.id;
+    };
+    const createRole = async (name: string, permissionKeys: string[]) => {
+      const res = await request(server)
+        .post('/api/v1/rbac/roles')
+        .set(as('opAdminX'))
+        .send({ name, permissionKeys })
+        .expect(201);
+      return res.body.id as string;
+    };
+
+    it('keeps a custom role with invite or user permissions away from client memberships', async () => {
+      const target = await memberId(USERS.advertiserA2);
+      for (const keys of [
+        ['workspace:read', 'workspace:invite'],
+        ['workspace:read', 'user:read'],
+      ]) {
+        const roleId = await createRole(`custom-${keys[1]}`, keys);
+        await request(server)
+          .patch(`/api/v1/workspaces/${workspaceX}/members/${target}`)
+          .set(as('opAdminX'))
+          .send({ roleId })
+          .expect(400);
+      }
+    });
+
+    it('stops a custom role held by a client membership from growing past the ceiling', async () => {
+      const target = await memberId(USERS.advertiserA2);
+      const roleId = await createRole('advertiser-reader', ['workspace:read']);
+      await request(server)
+        .patch(`/api/v1/workspaces/${workspaceX}/members/${target}`)
+        .set(as('opAdminX'))
+        .send({ roleId })
+        .expect(200);
+
+      await request(server)
+        .post(`/api/v1/rbac/roles/${roleId}/permissions`)
+        .set(as('opAdminX'))
+        .send({ permissionKey: 'user:read' })
+        .expect(400);
+      await request(server)
+        .patch(`/api/v1/rbac/roles/${roleId}`)
+        .set(as('opAdminX'))
+        .send({ permissionKeys: ['workspace:read', 'workspace:invite'] })
+        .expect(400);
+      const role = await getPrisma().role.findUniqueOrThrow({
+        where: { id: roleId },
+        include: { permissions: { include: { permission: true } } },
+      });
+      expect(role.permissions.map((p) => p.permission.key)).toEqual(['workspace:read']);
+    });
+
+    it('lets client users neither invite nor assign operator roles', async () => {
+      const roles = await getPrisma().role.findMany({ where: { workspaceId: workspaceX } });
+      const operatorAdmin = roles.find((r) => r.name === 'operator_admin')!;
+      await request(server)
+        .post('/api/v1/invitations')
+        .set(as('clientAdminA'))
+        .send({ email: 'escalation@example.com', roleId: operatorAdmin.id })
+        .expect(403);
+      await request(server)
+        .patch(`/api/v1/workspaces/${workspaceX}/members/${await memberId(USERS.clientEditorA)}`)
+        .set(as('clientAdminA'))
+        .send({ roleId: operatorAdmin.id })
+        .expect(403);
+      await request(server)
+        .post('/api/v1/rbac/roles')
+        .set(as('clientAdminA'))
+        .send({ name: 'sneaky', permissionKeys: ['user:read'] })
+        .expect(403);
+    });
+  });
+
   describe('relations loaded from unscoped models', () => {
     const asClientA = <T>(fn: () => Promise<T>) =>
       TenantContext.runWithScope(scopeOf({ clientId: CLIENT_A }), fn);
@@ -332,6 +449,41 @@ describe('Tenant scope (e2e)', () => {
       );
     });
 
+    it('refuses raw SQL through the scoped client unless it runs as system work', async () => {
+      await expect(asClientA(() => scoped.client.$queryRaw`SELECT 1`)).rejects.toBeInstanceOf(
+        TenantScopeError,
+      );
+      await expect(
+        asClientA(() => scoped.client.$executeRawUnsafe('DELETE FROM "WorkspaceMember"')),
+      ).rejects.toBeInstanceOf(TenantScopeError);
+      await expect(
+        TenantContext.runAsSystem(() => scoped.client.$queryRaw`SELECT 1`),
+      ).resolves.toEqual([{ '?column?': 1 }]);
+    });
+
+    it('limits tenant roots to the own organization', async () => {
+      const seen = await asClientA(async () => ({
+        organizations: await scoped.client.organization.findMany(),
+        workspaces: await scoped.client.workspace.findMany(),
+        foreign: await scoped.client.workspace.findUnique({ where: { id: workspaceY } }),
+      }));
+      expect(seen.organizations.map((o) => o.id)).toEqual([organizationX]);
+      expect(seen.workspaces.map((w) => w.id)).toEqual([workspaceX]);
+      expect(seen.foreign).toBeNull();
+    });
+
+    it('refuses deletes that would cascade into scoped rows', async () => {
+      const outsider = await getPrisma().user.findUniqueOrThrow({
+        where: { email: USERS.opAdminY },
+      });
+      await expect(
+        TenantContext.runWithScope(scopeOf({}), () =>
+          scoped.client.user.delete({ where: { id: outsider.id } }),
+        ),
+      ).rejects.toBeInstanceOf(TenantScopeError);
+      expect(await getPrisma().user.count({ where: { id: outsider.id } })).toBe(1);
+    });
+
     it('refuses scoped models when no scope is set', async () => {
       await expect(
         TenantContext.run(async () => await scoped.client.workspaceMember.findMany()),
@@ -386,6 +538,25 @@ describe('Tenant scope (e2e)', () => {
         ).rejects.toThrow('outside the current tenant scope');
       });
       expect(await getPrisma().workspaceMember.count({ where: { userId: outsider.id } })).toBe(1);
+    });
+  });
+
+  describe('audit rows', () => {
+    it('cannot be rewritten by deleting their organization', async () => {
+      const prisma = getPrisma();
+      const owner = await prisma.user.findUniqueOrThrow({ where: { email: USERS.opAdminY } });
+      const lonely = await prisma.organization.create({
+        data: { name: 'Lonely', slug: 'lonely', ownerId: owner.id },
+      });
+      const row = await prisma.auditLog.create({
+        data: { action: 'scope.test.lonely', organizationId: lonely.id, hash: randomUUID() },
+      });
+
+      await expect(prisma.organization.delete({ where: { id: lonely.id } })).rejects.toThrow();
+      expect(await prisma.auditLog.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+        organizationId: lonely.id,
+        hash: row.hash,
+      });
     });
   });
 
