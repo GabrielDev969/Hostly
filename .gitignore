@@ -1,0 +1,22 @@
+# Node / Turborepo
+node_modules/
+dist/
+.next/
+.turbo/
+coverage/
+
+# Variáveis de ambiente (só o exemplo entra no repo)
+.env*
+!.env.example
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.keystore
+*.jks
+
+# IDEs e sistema
+.idea/
+*.iml
+.DS_Store
