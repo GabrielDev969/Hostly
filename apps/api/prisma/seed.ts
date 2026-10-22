@@ -8,6 +8,7 @@ import {
   ADMIN_WORKSPACE_NAME,
   SUPER_ADMIN_ROLE,
 } from '../src/modules/rbac/constants/system';
+import { DEFAULT_ROLES, OWNER_ROLE } from '../src/modules/rbac/constants/roles';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -115,6 +116,72 @@ async function seedPermissions(): Promise<string[]> {
   return PERMISSIONS.map((p) => p.key);
 }
 
+function readOperatorEnv(): { name: string; slug: string } {
+  const name = process.env.SEED_OPERATOR_NAME;
+  const slug = process.env.SEED_OPERATOR_SLUG;
+  if (!name || !slug) {
+    throw new Error('SEED_OPERATOR_NAME and SEED_OPERATOR_SLUG must be defined in .env');
+  }
+  return { name, slug };
+}
+
+// The operator (Organization) with its single workspace, the five Hostly roles and the admin as
+// operator_admin. The brand name comes from .env: no brand is hardcoded.
+async function seedOperator(adminEmail: string): Promise<void> {
+  const operator = readOperatorEnv();
+  console.log(`🌱 Seeding operator "${operator.name}"...`);
+
+  const admin = await prisma.user.findUniqueOrThrow({ where: { email: adminEmail } });
+
+  const organization = await prisma.organization.upsert({
+    where: { slug: operator.slug },
+    update: { name: operator.name },
+    create: { name: operator.name, slug: operator.slug, ownerId: admin.id },
+  });
+
+  const workspace = await prisma.workspace.upsert({
+    where: { slug: operator.slug },
+    update: { name: operator.name, organizationId: organization.id },
+    create: {
+      name: operator.name,
+      slug: operator.slug,
+      isPersonal: false,
+      ownerId: admin.id,
+      organizationId: organization.id,
+    },
+  });
+
+  let ownerRoleId = '';
+  for (const definition of DEFAULT_ROLES) {
+    const role = await prisma.role.upsert({
+      where: { workspaceId_name: { workspaceId: workspace.id, name: definition.name } },
+      update: { description: definition.description, isSystem: definition.isSystem },
+      create: {
+        name: definition.name,
+        description: definition.description,
+        workspaceId: workspace.id,
+        isSystem: definition.isSystem,
+      },
+    });
+    const permissions = await prisma.permission.findMany({
+      where: { key: { in: definition.permissionKeys }, workspaceId: null },
+    });
+    await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
+    await prisma.rolePermission.createMany({
+      data: permissions.map((p) => ({ roleId: role.id, permissionId: p.id })),
+    });
+    if (definition.name === OWNER_ROLE) ownerRoleId = role.id;
+  }
+
+  await prisma.workspaceMember.upsert({
+    where: { userId_workspaceId: { userId: admin.id, workspaceId: workspace.id } },
+    update: { roleId: ownerRoleId, clientId: null, advertiserId: null },
+    create: { userId: admin.id, workspaceId: workspace.id, roleId: ownerRoleId },
+  });
+
+  console.log(`✅ Operator "${operator.name}" provisioned with ${adminEmail} as ${OWNER_ROLE}`);
+}
+
 async function seedSuperAdmin(allPermissionKeys: string[]): Promise<void> {
   const env = readSuperAdminEnv();
   console.log('🌱 Seeding super admin...');
@@ -195,6 +262,7 @@ async function seedSuperAdmin(allPermissionKeys: string[]): Promise<void> {
 async function main() {
   const permissionKeys = await seedPermissions();
   await seedSuperAdmin(permissionKeys);
+  await seedOperator(readSuperAdminEnv().email);
   console.log('Seed completed successfully!');
 }
 

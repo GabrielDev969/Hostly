@@ -12,7 +12,7 @@ describe('CreateWorkspaceUseCase', () => {
     useCase = new CreateWorkspaceUseCase(workspaces);
   });
 
-  it('creates the workspace with slug + nanoid suffix and three default roles', async () => {
+  it('creates the workspace with slug + nanoid suffix and the five Hostly roles', async () => {
     workspaces.createWithDefaults.mockResolvedValue({
       workspace: {
         id: 'w1',
@@ -31,16 +31,24 @@ describe('CreateWorkspaceUseCase', () => {
     expect(arg.slug).toMatch(/^acme-inc-/);
     expect(arg.ownerId).toBe('u1');
     expect(arg.isPersonal).toBe(false);
-    expect(arg.ownerRoleName).toBe('Owner');
-    expect(arg.defaultRoles).toHaveLength(3);
+    expect(arg.ownerRoleName).toBe('operator_admin');
+    expect(arg.defaultRoles.map((r) => r.name)).toEqual([
+      'operator_admin',
+      'operator_staff',
+      'client_admin',
+      'client_editor',
+      'advertiser',
+    ]);
 
-    const [owner, admin, member] = arg.defaultRoles;
-    expect(owner!.name).toBe('Owner');
-    expect(owner!.permissionKeys.length).toBeGreaterThan(0);
-    expect(admin!.permissionKeys.every((k) => !k.includes(':delete'))).toBe(true);
-    expect(
-      member!.permissionKeys.every((k) => k.endsWith(':read') || k === 'workspace:invite'),
-    ).toBe(true);
+    const byName = new Map(arg.defaultRoles.map((r) => [r.name, r.permissionKeys]));
+    expect(byName.get('operator_admin')).not.toContain('workspace:delete');
+    expect(byName.get('operator_admin')).toContain('role:assign');
+    for (const role of ['operator_staff', 'client_admin', 'client_editor', 'advertiser']) {
+      expect(byName.get(role)!.every((k) => k.endsWith(':read'))).toBe(true);
+      expect(byName.get(role)).not.toContain('workspace:invite');
+    }
+    expect(byName.get('client_editor')).not.toContain('audit:read');
+    expect(byName.get('advertiser')).toEqual(['workspace:read']);
 
     expect(result.id).toBe('w1');
   });

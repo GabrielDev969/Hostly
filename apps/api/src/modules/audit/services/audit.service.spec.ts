@@ -5,6 +5,7 @@ import {
   CreateAuditLogData,
 } from '../repositories/audit-logs.repository.interface';
 import { AuditLog } from '../entities/audit-log.entity';
+import { TenantContext } from '@shared/tenancy/tenant-context';
 
 describe('AuditService', () => {
   let logs: jest.Mocked<AuditLogsRepository>;
@@ -41,7 +42,32 @@ describe('AuditService', () => {
 
     await service.log(payload);
 
-    expect(logs.create).toHaveBeenCalledWith(payload);
+    expect(logs.create).toHaveBeenCalledWith({ ...payload, organizationId: null, clientId: null });
+  });
+
+  it('fills workspace, organization and client from the tenant scope', async () => {
+    logs.create.mockResolvedValue({ id: 'a1' } as AuditLog);
+    const scope = {
+      organizationId: 'org1',
+      workspaceId: 'w1',
+      clientId: 'client-a',
+      advertiserId: null,
+    };
+
+    await TenantContext.runWithScope(scope, () =>
+      service.record({ actorId: 'u1', action: 'site.created', entity: 'Site', entityId: 's1' }),
+    );
+
+    expect(logs.create).toHaveBeenCalledWith({
+      userId: 'u1',
+      action: 'site.created',
+      resource: 'Site',
+      resourceId: 's1',
+      metadata: null,
+      workspaceId: 'w1',
+      organizationId: 'org1',
+      clientId: 'client-a',
+    });
   });
 
   it('swallows repository errors and logs them via Nest Logger', async () => {

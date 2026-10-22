@@ -4,9 +4,12 @@ export interface CreateWorkspaceMemberData {
   userId: string;
   workspaceId: string;
   roleId: string;
+  clientId?: string | null;
+  advertiserId?: string | null;
 }
 
 export interface WorkspaceMemberWithRelations extends WorkspaceMember {
+  organizationId: string;
   role: {
     id: string;
     name: string;

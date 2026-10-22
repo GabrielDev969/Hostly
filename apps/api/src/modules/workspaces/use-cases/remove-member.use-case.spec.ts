@@ -25,6 +25,8 @@ const baseMember = (overrides: Partial<WorkspaceMember> = {}): WorkspaceMember =
   userId: 'u2',
   workspaceId: 'w1',
   roleId: 'r1',
+  clientId: null,
+  advertiserId: null,
   joinedAt: new Date(),
   ...overrides,
 });

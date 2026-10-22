@@ -51,6 +51,9 @@ describe('SuperAdminGuard', () => {
       userId: 'u-sa',
       workspaceId: 'w-admin',
       roleId: 'r-sa',
+      clientId: null,
+      advertiserId: null,
+      organizationId: 'org-admin',
       joinedAt: new Date(),
       role: {
         id: 'r-sa',

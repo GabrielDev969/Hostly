@@ -5,6 +5,8 @@ import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/te
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
+import { provisionOperator } from './helpers/operator';
+import { provisionSuperAdmin } from './helpers/super-admin';
 
 describe('Workspaces flow (e2e)', () => {
   let app: INestApplication;
@@ -48,8 +50,19 @@ describe('Workspaces flow (e2e)', () => {
     return { credentials, accessToken: login.body.accessToken as string };
   }
 
-  it('GET /workspaces returns the personal workspace created on register', async () => {
+  async function superAdminToken(): Promise<string> {
+    const { accessToken } = await registerAndLogin({ email: 'root@example.com', name: 'Root' });
+    const me = await request(server)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    await provisionSuperAdmin(me.body.id as string);
+    return accessToken;
+  }
+
+  it('GET /workspaces returns the operator workspace provisioned for the owner', async () => {
     const { accessToken } = await registerAndLogin();
+    const workspaceId = await provisionOperator(app, 'jane@example.com', { name: 'Acme Malls' });
 
     const res = await request(server)
       .get('/api/v1/workspaces')
@@ -58,13 +71,15 @@ describe('Workspaces flow (e2e)', () => {
 
     expect(res.body).toHaveLength(1);
     expect(res.body[0]).toMatchObject({
-      isPersonal: true,
-      name: "Jane Doe's Workspace",
+      id: workspaceId,
+      isPersonal: false,
+      name: 'Acme Malls',
     });
   });
 
   it('GET /workspaces/:id returns the workspace when the user is a member', async () => {
     const { accessToken } = await registerAndLogin();
+    await provisionOperator(app, 'jane@example.com');
     const list = await request(server)
       .get('/api/v1/workspaces')
       .set('Authorization', `Bearer ${accessToken}`)
@@ -81,6 +96,7 @@ describe('Workspaces flow (e2e)', () => {
 
   it('GET /workspaces/:id returns 403 when user is not a member', async () => {
     const a = await registerAndLogin();
+    await provisionOperator(app, 'jane@example.com');
     const b = await registerAndLogin({ email: 'bob@example.com', name: 'Bob' });
 
     const aList = await request(server)
@@ -95,19 +111,45 @@ describe('Workspaces flow (e2e)', () => {
       .expect(403);
   });
 
-  it('DELETE /workspaces/:id forbids deleting personal workspaces', async () => {
+  it('DELETE /workspaces/:id is forbidden to operator_admin (no workspace:delete)', async () => {
     const { accessToken } = await registerAndLogin();
-    const list = await request(server)
-      .get('/api/v1/workspaces')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
-    const workspaceId = list.body[0].id as string;
+    const workspaceId = await provisionOperator(app, 'jane@example.com');
 
     const res = await request(server)
       .delete(`/api/v1/workspaces/${workspaceId}`)
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(403);
 
+    expect(res.body.message).toMatch(/workspace:delete/);
+  });
+
+  it('DELETE /workspaces/:id forbids deleting personal workspaces, even for a super admin', async () => {
+    await registerAndLogin();
+    const workspaceId = await provisionOperator(app, 'jane@example.com', { isPersonal: true });
+    const rootToken = await superAdminToken();
+
+    const res = await request(server)
+      .delete(`/api/v1/workspaces/${workspaceId}`)
+      .set('Authorization', `Bearer ${rootToken}`)
+      .expect(403);
+
     expect(res.body.message).toMatch(/personal/i);
+  });
+
+  it('DELETE /workspaces/:id lets a super admin soft-delete an operator workspace', async () => {
+    const { accessToken } = await registerAndLogin();
+    const workspaceId = await provisionOperator(app, 'jane@example.com');
+    const rootToken = await superAdminToken();
+
+    await request(server)
+      .delete(`/api/v1/workspaces/${workspaceId}`)
+      .set('Authorization', `Bearer ${rootToken}`)
+      .expect(204);
+
+    const list = await request(server)
+      .get('/api/v1/workspaces')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    expect(list.body).toEqual([]);
   });
 });

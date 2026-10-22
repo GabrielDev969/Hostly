@@ -2,6 +2,8 @@ import { createCache } from 'cache-manager';
 import { CacheService } from './cache.service';
 import { Cacheable } from './cacheable.decorator';
 import { InvalidateCache } from './invalidate-cache.decorator';
+import { TenantContext } from '@shared/tenancy/tenant-context';
+import type { TenantScope } from '@shared/tenancy/tenant-scope';
 
 class TestRepo {
   callCount = 0;
@@ -94,5 +96,27 @@ describe('Cacheable + InvalidateCache decorators', () => {
     await expect(uninjected.update()).rejects.toThrow(
       /requires the host class to inject CacheService/,
     );
+  });
+
+  describe('tenant scope', () => {
+    const operator: TenantScope = {
+      organizationId: 'org1',
+      workspaceId: 'w1',
+      clientId: null,
+      advertiserId: null,
+    };
+    const client: TenantScope = { ...operator, clientId: 'client-a' };
+
+    it('never serves a result cached under one scope to another scope', async () => {
+      const repo = new TestRepo(new CacheService(createCache()));
+
+      const asOperator = await TenantContext.runWithScope(operator, () => repo.findById('x'));
+      const asClient = await TenantContext.runWithScope(client, () => repo.findById('x'));
+      const asClientAgain = await TenantContext.runWithScope(client, () => repo.findById('x'));
+
+      expect(asOperator.n).toBe(1);
+      expect(asClient.n).toBe(2);
+      expect(asClientAgain.n).toBe(2);
+    });
   });
 });

@@ -5,6 +5,7 @@ import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/te
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
+import { provisionOperator } from './helpers/operator';
 
 describe('Audit logs (e2e)', () => {
   let app: INestApplication;
@@ -36,6 +37,7 @@ describe('Audit logs (e2e)', () => {
       name: 'Owner',
       password: 'StrongPass@123',
     });
+    await provisionOperator(app, 'owner@example.com');
     const login = await request(server)
       .post('/api/v1/auth/login')
       .send({ email: 'owner@example.com', password: 'StrongPass@123' })
@@ -51,17 +53,17 @@ describe('Audit logs (e2e)', () => {
       .get('/api/v1/rbac/roles')
       .set('Authorization', `Bearer ${accessToken}`)
       .set('x-workspace-id', workspaceId);
-    const memberRoleId = (
-      rolesRes.body.find((r: { name: string }) => r.name === 'Member') as {
+    const staffRoleId = (
+      rolesRes.body.find((r: { name: string }) => r.name === 'operator_staff') as {
         id: string;
       }
     ).id;
 
-    return { accessToken, workspaceId, memberRoleId };
+    return { accessToken, workspaceId, staffRoleId };
   }
 
   it('records an audit log when a user is created', async () => {
-    const { accessToken, workspaceId, memberRoleId } = await setup();
+    const { accessToken, workspaceId, staffRoleId } = await setup();
 
     await request(server)
       .post('/api/v1/users')
@@ -71,7 +73,7 @@ describe('Audit logs (e2e)', () => {
         email: 'newbie@example.com',
         name: 'Newbie',
         password: 'StrongPass@123',
-        roleId: memberRoleId,
+        roleId: staffRoleId,
       })
       .expect(201);
 
@@ -88,7 +90,7 @@ describe('Audit logs (e2e)', () => {
   });
 
   it('filters audit logs by action prefix', async () => {
-    const { accessToken, workspaceId, memberRoleId } = await setup();
+    const { accessToken, workspaceId, staffRoleId } = await setup();
 
     await request(server)
       .post('/api/v1/users')
@@ -98,7 +100,7 @@ describe('Audit logs (e2e)', () => {
         email: 'newbie@example.com',
         name: 'Newbie',
         password: 'StrongPass@123',
-        roleId: memberRoleId,
+        roleId: staffRoleId,
       })
       .expect(201);
 

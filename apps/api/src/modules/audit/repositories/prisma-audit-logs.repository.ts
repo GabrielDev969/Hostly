@@ -10,6 +10,7 @@ import {
 import { AuditLog } from '../entities/audit-log.entity';
 import { AuditLog as PrismaAuditLog, Prisma } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';
+import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 
 // Arbitrary stable bigint passed to pg_advisory_xact_lock so concurrent
 // audit-log inserts serialize on the chain and can't fork prevHash.
@@ -21,6 +22,8 @@ export function computeAuditHash(
     id: string;
     userId: string | null;
     workspaceId: string | null;
+    organizationId: string | null;
+    clientId: string | null;
     action: string;
     resource: string | null;
     resourceId: string | null;
@@ -35,6 +38,8 @@ export function computeAuditHash(
     id: fields.id,
     userId: fields.userId,
     workspaceId: fields.workspaceId,
+    organizationId: fields.organizationId,
+    clientId: fields.clientId,
     action: fields.action,
     resource: fields.resource,
     resourceId: fields.resourceId,
@@ -48,7 +53,11 @@ export function computeAuditHash(
 
 @Injectable()
 export class PrismaAuditLogsRepository extends AuditLogsRepository {
-  constructor(private prisma: PrismaService) {
+  // Writes and chain maintenance span every tenant, so they use the raw client; listing is scoped.
+  constructor(
+    private prisma: PrismaService,
+    private scoped: ScopedPrismaService,
+  ) {
     super();
   }
 
@@ -70,6 +79,8 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
         id,
         userId: data.userId ?? null,
         workspaceId: data.workspaceId ?? null,
+        organizationId: data.organizationId ?? null,
+        clientId: data.clientId ?? null,
         action: data.action,
         resource: data.resource ?? null,
         resourceId: data.resourceId ?? null,
@@ -84,6 +95,8 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
           id,
           userId: data.userId,
           workspaceId: data.workspaceId,
+          organizationId: data.organizationId,
+          clientId: data.clientId,
           action: data.action,
           resource: data.resource,
           resourceId: data.resourceId,
@@ -119,13 +132,13 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
     }
 
     const [items, total] = await Promise.all([
-      this.prisma.auditLog.findMany({
+      this.scoped.client.auditLog.findMany({
         where,
         skip: (params.page - 1) * params.limit,
         take: params.limit,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.auditLog.count({ where }),
+      this.scoped.client.auditLog.count({ where }),
     ]);
 
     return {
@@ -163,6 +176,8 @@ export class PrismaAuditLogsRepository extends AuditLogsRepository {
       id: raw.id,
       userId: raw.userId,
       workspaceId: raw.workspaceId,
+      organizationId: raw.organizationId,
+      clientId: raw.clientId,
       action: raw.action,
       resource: raw.resource,
       resourceId: raw.resourceId,

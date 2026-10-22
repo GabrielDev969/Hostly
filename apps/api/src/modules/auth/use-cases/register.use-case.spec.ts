@@ -1,7 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { RegisterUseCase } from './register.use-case';
 import { UsersRepository } from '@modules/users/repositories/users.repository.interface';
-import { CreateWorkspaceUseCase } from '@modules/workspaces/use-cases/create-workspace.use-case';
 import { CryptoUtil } from '@shared/utils/crypto.util';
 import { User } from '@modules/users/entities/user.entity';
 import { MetricsService } from '@shared/metrics/metrics.service';
@@ -9,7 +8,6 @@ import { RequestEmailVerificationUseCase } from './request-email-verification.us
 
 describe('RegisterUseCase', () => {
   let users: jest.Mocked<UsersRepository>;
-  let createWorkspace: jest.Mocked<CreateWorkspaceUseCase>;
   let metrics: jest.Mocked<MetricsService>;
   let requestEmailVerification: jest.Mocked<RequestEmailVerificationUseCase>;
   let useCase: RegisterUseCase;
@@ -33,19 +31,16 @@ describe('RegisterUseCase', () => {
       findTokensInvalidatedAt: jest.fn(),
       invalidateTokens: jest.fn(),
     };
-    createWorkspace = {
-      execute: jest.fn(),
-    } as unknown as jest.Mocked<CreateWorkspaceUseCase>;
     metrics = {
       incRegister: jest.fn(),
     } as unknown as jest.Mocked<MetricsService>;
     requestEmailVerification = {
       execute: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<RequestEmailVerificationUseCase>;
-    useCase = new RegisterUseCase(users, createWorkspace, metrics, requestEmailVerification);
+    useCase = new RegisterUseCase(users, metrics, requestEmailVerification);
   });
 
-  it('creates a user, hashes the password and provisions a personal workspace', async () => {
+  it('creates a user and hashes the password without provisioning any tenant', async () => {
     users.findByEmail.mockResolvedValue(null);
     users.create.mockResolvedValue({
       id: 'u1',
@@ -74,11 +69,6 @@ describe('RegisterUseCase', () => {
       CryptoUtil.verifyPassword(createArg.passwordHash!, 'StrongPass@123'),
     ).resolves.toBe(true);
 
-    expect(createWorkspace.execute).toHaveBeenCalledWith({
-      userId: 'u1',
-      name: "Jane's Workspace",
-      isPersonal: true,
-    });
     expect(requestEmailVerification.execute).toHaveBeenCalledWith('u1');
   });
 
@@ -94,6 +84,5 @@ describe('RegisterUseCase', () => {
     ).rejects.toBeInstanceOf(ConflictException);
 
     expect(users.create).not.toHaveBeenCalled();
-    expect(createWorkspace.execute).not.toHaveBeenCalled();
   });
 });

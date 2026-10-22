@@ -1,5 +1,6 @@
 import { createCache } from 'cache-manager';
 import { PrismaService } from '@shared/database/prisma.service';
+import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 import { CacheService } from '@shared/cache/cache.service';
 import { PrismaWorkspaceMembersRepository } from './prisma-workspace-members.repository';
 import { ADMIN_WORKSPACE_SLUG } from '@modules/rbac/constants/system';
@@ -26,6 +27,8 @@ describe('PrismaWorkspaceMembersRepository', () => {
     userId: 'u1',
     workspaceId: 'w1',
     roleId: 'r1',
+    clientId: null,
+    advertiserId: null,
     joinedAt: new Date('2026-01-01'),
   };
 
@@ -45,6 +48,7 @@ describe('PrismaWorkspaceMembersRepository', () => {
     };
     repo = new PrismaWorkspaceMembersRepository(
       prisma as unknown as PrismaService,
+      { client: prisma } as unknown as ScopedPrismaService,
       new CacheService(createCache()),
     );
   });
@@ -53,6 +57,7 @@ describe('PrismaWorkspaceMembersRepository', () => {
     it('cached lookups serve from cache on repeat call', async () => {
       prisma.workspaceMember.findUnique.mockResolvedValue({
         ...baseMember,
+        workspace: { organizationId: 'org1' },
         role: { id: 'r1', name: 'Owner', isSystem: true, permissions: [] },
       });
       await repo.findByUserAndWorkspace('u1', 'w1');
@@ -103,6 +108,7 @@ describe('PrismaWorkspaceMembersRepository', () => {
     it('returns mapped membership with role + permission keys', async () => {
       prisma.workspaceMember.findUnique.mockResolvedValue({
         ...baseMember,
+        workspace: { organizationId: 'org1' },
         role: {
           id: 'r1',
           name: 'Owner',
@@ -118,11 +124,13 @@ describe('PrismaWorkspaceMembersRepository', () => {
       expect(prisma.workspaceMember.findUnique).toHaveBeenCalledWith({
         where: { userId_workspaceId: { userId: 'u1', workspaceId: 'w1' } },
         include: {
+          workspace: { select: { organizationId: true } },
           role: { include: { permissions: { include: { permission: true } } } },
         },
       });
       expect(result).toEqual({
         ...baseMember,
+        organizationId: 'org1',
         role: {
           id: 'r1',
           name: 'Owner',
@@ -149,6 +157,7 @@ describe('PrismaWorkspaceMembersRepository', () => {
       prisma.workspaceMember.findUnique.mockResolvedValue({
         ...baseMember,
         workspaceId: 'admin-ws',
+        workspace: { organizationId: 'org-admin' },
         role: {
           id: 'sa',
           name: 'SuperAdmin',

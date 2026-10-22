@@ -1,16 +1,12 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import {
-  startTestDatabase,
-  stopTestDatabase,
-  resetDatabase,
-  getPrisma,
-} from './helpers/test-database';
+import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/test-database';
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
-import { ADMIN_WORKSPACE_SLUG, SUPER_ADMIN_ROLE } from '../src/modules/rbac/constants/system';
+import { provisionOperator } from './helpers/operator';
+import { provisionSuperAdmin } from './helpers/super-admin';
 
 describe('Super admin fallback (e2e)', () => {
   let app: INestApplication;
@@ -49,47 +45,9 @@ describe('Super admin fallback (e2e)', () => {
     return login.body.accessToken as string;
   }
 
-  async function provisionSuperAdmin(userId: string): Promise<void> {
-    const prisma = getPrisma();
-    const organization = await prisma.organization.create({
-      data: {
-        name: 'System Administration',
-        slug: `org-${ADMIN_WORKSPACE_SLUG}`,
-        ownerId: userId,
-      },
-    });
-    const adminWs = await prisma.workspace.create({
-      data: {
-        name: 'System Administration',
-        slug: ADMIN_WORKSPACE_SLUG,
-        isPersonal: false,
-        ownerId: userId,
-        organizationId: organization.id,
-      },
-    });
-    const allPerms = await prisma.permission.findMany();
-    const role = await prisma.role.create({
-      data: {
-        name: SUPER_ADMIN_ROLE,
-        description: 'Global access',
-        workspaceId: adminWs.id,
-        isSystem: true,
-        permissions: {
-          create: allPerms.map((p) => ({ permissionId: p.id })),
-        },
-      },
-    });
-    await prisma.workspaceMember.create({
-      data: {
-        userId,
-        workspaceId: adminWs.id,
-        roleId: role.id,
-      },
-    });
-  }
-
   it('grants access to a workspace where the user is NOT a direct member', async () => {
     const ownerToken = await registerAndLogin('owner@example.com', 'Owner');
+    await provisionOperator(app, 'owner@example.com');
     const ownerWs = await request(server)
       .get('/api/v1/workspaces')
       .set('Authorization', `Bearer ${ownerToken}`)
@@ -123,6 +81,7 @@ describe('Super admin fallback (e2e)', () => {
 
   it('returns 403 for a regular user accessing another workspace', async () => {
     const ownerToken = await registerAndLogin('owner@example.com', 'Owner');
+    await provisionOperator(app, 'owner@example.com');
     const ownerWs = await request(server)
       .get('/api/v1/workspaces')
       .set('Authorization', `Bearer ${ownerToken}`)

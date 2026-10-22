@@ -3,6 +3,8 @@ import { AuditLog } from '../entities/audit-log.entity';
 export interface CreateAuditLogData {
   userId?: string | null;
   workspaceId?: string | null;
+  organizationId?: string | null;
+  clientId?: string | null;
   action: string;
   resource?: string | null;
   resourceId?: string | null;

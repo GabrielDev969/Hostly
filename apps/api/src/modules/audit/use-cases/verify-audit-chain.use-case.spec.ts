@@ -8,6 +8,8 @@ function makeLog(prevHash: string | null, overrides: Partial<AuditLog> = {}): Au
     id: overrides.id ?? `log-${Math.random()}`,
     userId: null,
     workspaceId: null,
+    organizationId: null,
+    clientId: null,
     action: 'test.event',
     resource: null,
     resourceId: null,

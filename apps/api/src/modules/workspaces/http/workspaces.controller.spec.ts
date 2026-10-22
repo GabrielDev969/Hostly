@@ -121,6 +121,8 @@ describe('WorkspacesController', () => {
       userId: 'u2',
       workspaceId: 'w1',
       roleId: 'r1',
+      clientId: null,
+      advertiserId: null,
       joinedAt: new Date('2026-01-01'),
       user: { id: 'u2', email: 'b@x.com', name: 'B' },
       role: { id: 'r1', name: 'Member', isSystem: true },

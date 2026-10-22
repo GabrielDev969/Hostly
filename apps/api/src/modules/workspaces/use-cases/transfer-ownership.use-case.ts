@@ -10,6 +10,7 @@ import { WorkspacesRepository } from '../repositories/workspaces.repository.inte
 import { RolesRepository } from '@modules/rbac/repositories/roles.repository.interface';
 import { UsersRepository } from '@modules/users/repositories/users.repository.interface';
 import { CryptoUtil } from '@shared/utils/crypto.util';
+import { assertRoleFitsScope, OWNER_ROLE } from '@modules/rbac/constants/roles';
 
 interface TransferOwnershipInput {
   workspaceId: string;
@@ -52,18 +53,19 @@ export class TransferOwnershipUseCase {
     }
 
     const workspaceRoles = await this.roles.findManyByWorkspace(input.workspaceId);
-    const ownerRole = workspaceRoles.find((r) => r.name === 'Owner');
-    const adminRole = workspaceRoles.find((r) => r.name === 'Admin');
-    if (!ownerRole || !adminRole) {
-      throw new BadRequestException('Workspace is missing the default Owner/Admin roles');
+    // Ownership only moves Workspace.ownerId; both sides keep operator_admin.
+    const ownerRole = workspaceRoles.find((r) => r.name === OWNER_ROLE);
+    if (!ownerRole) {
+      throw new BadRequestException(`Workspace is missing the ${OWNER_ROLE} role`);
     }
+    assertRoleFitsScope(OWNER_ROLE, target);
 
     await this.workspaces.transferOwnership({
       workspaceId: input.workspaceId,
       fromUserId: input.callerUserId,
       toUserId: target.userId,
       ownerRoleId: ownerRole.id,
-      adminRoleId: adminRole.id,
+      adminRoleId: ownerRole.id,
     });
     await this.users.invalidateTokens(input.callerUserId);
     await this.users.invalidateTokens(target.userId);

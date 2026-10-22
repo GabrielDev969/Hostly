@@ -5,6 +5,7 @@ import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/te
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
+import { provisionOperator } from './helpers/operator';
 
 interface JoinResult {
   workspaceId: string;
@@ -55,6 +56,7 @@ describe('Workspace members (e2e)', () => {
     workspaceId: string;
   }> {
     const ownerToken = await registerLogin('owner@example.com', 'Owner');
+    await provisionOperator(app, 'owner@example.com');
     const wsList = await request(server)
       .get('/api/v1/workspaces')
       .set('Authorization', `Bearer ${ownerToken}`);
@@ -66,7 +68,7 @@ describe('Workspace members (e2e)', () => {
     workspaceId: string,
     email: string,
     name: string,
-    roleName: 'Member' | 'Admin' = 'Member',
+    roleName: 'operator_staff' | 'operator_admin' = 'operator_staff',
   ): Promise<JoinResult> {
     const rolesRes = await request(server)
       .get('/api/v1/rbac/roles')
@@ -116,7 +118,7 @@ describe('Workspace members (e2e)', () => {
     const bob = (res.body as Array<{ user: { email: string }; role: { name: string } }>).find(
       (m) => m.user.email === 'b@example.com',
     );
-    expect(bob?.role.name).toBe('Member');
+    expect(bob?.role.name).toBe('operator_staff');
   });
 
   it('PATCH /workspaces/:id/members/:memberId changes the role', async () => {
@@ -128,7 +130,7 @@ describe('Workspace members (e2e)', () => {
       .set('Authorization', `Bearer ${ownerToken}`)
       .set('x-workspace-id', workspaceId);
     const adminRole = (rolesRes.body as { id: string; name: string }[]).find(
-      (r) => r.name === 'Admin',
+      (r) => r.name === 'operator_admin',
     ) as { id: string };
 
     await request(server)
@@ -145,7 +147,7 @@ describe('Workspace members (e2e)', () => {
     const bobMember = (list.body as Array<{ id: string; role: { name: string } }>).find(
       (m) => m.id === bob.memberId,
     );
-    expect(bobMember?.role.name).toBe('Admin');
+    expect(bobMember?.role.name).toBe('operator_admin');
   });
 
   it('PATCH cannot modify the workspace owner (403)', async () => {
@@ -161,7 +163,7 @@ describe('Workspace members (e2e)', () => {
       .set('Authorization', `Bearer ${ownerToken}`)
       .set('x-workspace-id', workspaceId);
     const adminRole = (rolesRes.body as { id: string; name: string }[]).find(
-      (r) => r.name === 'Admin',
+      (r) => r.name === 'operator_admin',
     ) as { id: string };
 
     await request(server)
@@ -207,7 +209,7 @@ describe('Workspace members (e2e)', () => {
       .expect(204);
   });
 
-  it('POST /transfer-ownership swaps owner and demotes the previous one to Admin', async () => {
+  it('POST /transfer-ownership moves ownerId and both sides keep operator_admin', async () => {
     const { ownerToken, workspaceId } = await ownerSetup();
     const bob = await inviteAndAccept(ownerToken, workspaceId, 'b@example.com', 'Bob');
 
@@ -231,20 +233,21 @@ describe('Workspace members (e2e)', () => {
       .set('Authorization', `Bearer ${newOwnerToken}`)
       .set('x-workspace-id', workspaceId);
 
-    const byEmail = new Map(
-      (list.body as Array<{ user: { email: string }; role: { name: string } }>).map((m) => [
-        m.user.email,
-        m.role.name,
-      ]),
-    );
-    expect(byEmail.get('b@example.com')).toBe('Owner');
-    expect(byEmail.get('owner@example.com')).toBe('Admin');
+    const members = list.body as Array<{
+      userId: string;
+      user: { email: string };
+      role: { name: string };
+    }>;
+    const byEmail = new Map(members.map((m) => [m.user.email, m]));
+    expect(byEmail.get('b@example.com')?.role.name).toBe('operator_admin');
+    expect(byEmail.get('owner@example.com')?.role.name).toBe('operator_admin');
 
     const ws = await request(server)
       .get(`/api/v1/workspaces/${workspaceId}`)
       .set('Authorization', `Bearer ${newOwnerToken}`)
-      .set('x-workspace-id', workspaceId);
-    expect((ws.body as { ownerId: string }).ownerId).not.toBe(undefined);
+      .set('x-workspace-id', workspaceId)
+      .expect(200);
+    expect((ws.body as { ownerId: string }).ownerId).toBe(byEmail.get('b@example.com')?.userId);
   });
 
   it('POST /transfer-ownership rejects when password is wrong (401)', async () => {
@@ -261,7 +264,13 @@ describe('Workspace members (e2e)', () => {
 
   it('POST /transfer-ownership rejects when caller is not the current owner (403)', async () => {
     const { ownerToken, workspaceId } = await ownerSetup();
-    const bob = await inviteAndAccept(ownerToken, workspaceId, 'b@example.com', 'Bob', 'Admin');
+    const bob = await inviteAndAccept(
+      ownerToken,
+      workspaceId,
+      'b@example.com',
+      'Bob',
+      'operator_admin',
+    );
 
     await request(server)
       .post(`/api/v1/workspaces/${workspaceId}/transfer-ownership`)
@@ -285,7 +294,7 @@ describe('Workspace members (e2e)', () => {
       .set('Authorization', `Bearer ${ownerToken}`)
       .set('x-workspace-id', workspaceId);
     const adminRole = (rolesRes.body as { id: string; name: string }[]).find(
-      (r) => r.name === 'Admin',
+      (r) => r.name === 'operator_admin',
     ) as { id: string };
 
     await request(server)

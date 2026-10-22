@@ -51,6 +51,8 @@ export class VerifyAuditChainUseCase {
           id: log.id,
           userId: log.userId,
           workspaceId: log.workspaceId,
+          organizationId: log.organizationId,
+          clientId: log.clientId,
           action: log.action,
           resource: log.resource,
           resourceId: log.resourceId,

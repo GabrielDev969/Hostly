@@ -5,6 +5,7 @@ import { UserResponseDto } from '../http/dto/user-response.dto';
 import { CryptoUtil } from '@shared/utils/crypto.util';
 import { WorkspaceMembersRepository } from '@modules/workspaces/repositories/workspace-members.repository.interface';
 import { RolesRepository } from '@modules/rbac/repositories/roles.repository.interface';
+import { assertRoleFitsScope } from '@modules/rbac/constants/roles';
 
 interface CreateUserInput {
   workspaceId: string;
@@ -31,6 +32,7 @@ export class CreateUserUseCase {
     // 2. Validate the role belongs to the workspace
     const role = await this.roles.findByIdInWorkspace(input.roleId, input.workspaceId);
     if (!role) throw new NotFoundException('Role not found in this workspace');
+    assertRoleFitsScope(role.name, { clientId: null, advertiserId: null });
 
     // 3. Create the user
     const passwordHash = await CryptoUtil.hashPassword(input.password);

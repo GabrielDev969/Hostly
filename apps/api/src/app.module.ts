@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { env } from './config/env.config';
@@ -33,6 +33,7 @@ import { AdminModule } from '@modules/admin/admin.module';
 import { FeatureFlagsModule } from '@modules/feature-flags/feature-flags.module';
 import { OrganizationsModule } from '@modules/organizations/organizations.module';
 import { MaintenanceModule } from '@shared/maintenance/maintenance.module';
+import { TenantContextMiddleware } from '@shared/tenancy/tenant-context.middleware';
 
 @Module({
   imports: [
@@ -94,4 +95,8 @@ import { MaintenanceModule } from '@shared/maintenance/maintenance.module';
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(TenantContextMiddleware).forRoutes('{*splat}');
+  }
+}

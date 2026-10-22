@@ -84,6 +84,33 @@ constructor(private users: UsersRepository) {}   // 1 import, sem @Inject, sem S
 10. **Tokens hash sha256** antes de persistir (refresh tokens em `Session.refreshTokenHash`, recovery codes em `User.recoveryCodes`).
 11. **Audit automático**. `AuditInterceptor` é global. Não logue manualmente; use `@Audit('action.name')` se precisar customizar.
 12. **JwtAuthGuard é global**. Marque rotas públicas com `@Public()`. Não importe o guard manualmente.
+13. **Register não cria tenant**. Usuário novo só ganha acesso por convite; a operadora nasce no seed.
+
+## Escopo central (regra 5 do Hostly)
+
+Operadora = `Organization` com um `Workspace` (contêiner de membros, papéis e convites). Cliente e anunciante são
+dados da membership: `WorkspaceMember.clientId` / `advertiserId` (nulos = operadora; só `clientId` = cliente; os dois =
+anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts` (`operator_admin`, `operator_staff`,
+`client_admin`, `client_editor`, `advertiser`); `assertRoleFitsScope` impede papel de cliente em membership de
+operadora e vice-versa.
+
+- O `TenantContextMiddleware` abre um `AsyncLocalStorage` por requisição; o `WorkspaceGuard` grava o escopo
+  (`organizationId`, `workspaceId`, `clientId`, `advertiserId`) em `TenantContext` e em `req.scope`.
+- **Repositório de negócio usa `ScopedPrismaService` (`this.scoped.client`)**, nunca o `PrismaService` cru. A extensão
+  (`src/shared/tenancy/tenant-scope.rewriter.ts`) põe o filtro de escopo em toda leitura e escrita dos modelos de
+  `SCOPED_MODELS`, filtra relações de lista pra esses modelos em `include`/`select`/`_count`/filtros de relação, e
+  recusa o que não dá pra filtrar: include a-um pra modelo escopado, `_count: true`, `orderBy` por relação escopada,
+  escrita aninhada (use ids escalares ou o delegate do modelo) e acesso sem escopo.
+- **Tabela de negócio nova** entra em `SCOPED_MODELS` (`src/shared/tenancy/scoped-models.ts`). O
+  `tenant-scope.registry.spec.ts` falha se um modelo com `organizationId`/`clientId`/`advertiserId` ficar de fora, se um
+  arquivo usar modelo escopado pelo `PrismaService` cru fora da allowlist (com motivo), ou se a convenção de chave
+  estrangeira `<relação>Id` deixar de valer (é dela que sai "lista ou a-um", porque o DMMF de runtime do Prisma 7 não
+  traz `isList`).
+- Nada de `$queryRaw`/`$executeRaw` em tabela de negócio: a extensão não enxerga SQL cru.
+- Jobs, seed e lookups de identidade que atravessam tenants rodam em `TenantContext.runAsSystem()`.
+- O `@Cacheable` prefixa a chave com o escopo atual: resultado de um escopo nunca serve outro.
+- Auditoria: `@Audit` nas rotas; em use-case, `AuditService.record({ actorId, action, entity, entityId })`. O escopo
+  (organização e cliente) vem do contexto.
 
 ## Estilo de código
 

@@ -13,11 +13,13 @@ import { Cacheable } from '@shared/cache/cacheable.decorator';
 import { InvalidateCache } from '@shared/cache/invalidate-cache.decorator';
 import { CACHE_NS, CACHE_TTL } from '@shared/cache/cache.constants';
 import { CacheService } from '@shared/cache/cache.service';
+import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 
 @Injectable()
 export class PrismaWorkspaceMembersRepository extends WorkspaceMembersRepository {
   constructor(
     private prisma: PrismaService,
+    private scoped: ScopedPrismaService,
     protected readonly cacheService: CacheService,
   ) {
     super();
@@ -30,7 +32,7 @@ export class PrismaWorkspaceMembersRepository extends WorkspaceMembersRepository
   }
 
   async findById(id: string): Promise<WorkspaceMember | null> {
-    const member = await this.prisma.workspaceMember.findUnique({
+    const member = await this.scoped.client.workspaceMember.findUnique({
       where: { id },
     });
     return member ? this.toEntity(member) : null;
@@ -48,6 +50,7 @@ export class PrismaWorkspaceMembersRepository extends WorkspaceMembersRepository
     const member = await this.prisma.workspaceMember.findUnique({
       where: { userId_workspaceId: { userId, workspaceId } },
       include: {
+        workspace: { select: { organizationId: true } },
         role: {
           include: {
             permissions: { include: { permission: true } },
@@ -60,6 +63,7 @@ export class PrismaWorkspaceMembersRepository extends WorkspaceMembersRepository
 
     return {
       ...this.toEntity(member),
+      organizationId: member.workspace.organizationId,
       role: {
         id: member.role.id,
         name: member.role.name,
@@ -92,7 +96,7 @@ export class PrismaWorkspaceMembersRepository extends WorkspaceMembersRepository
   }
 
   async findManyByWorkspaceWithRelations(workspaceId: string): Promise<WorkspaceMemberListItem[]> {
-    const members = await this.prisma.workspaceMember.findMany({
+    const members = await this.scoped.client.workspaceMember.findMany({
       where: { workspaceId, user: { deletedAt: null } },
       include: {
         user: { select: { id: true, email: true, name: true } },
@@ -131,6 +135,8 @@ export class PrismaWorkspaceMembersRepository extends WorkspaceMembersRepository
       userId: raw.userId,
       workspaceId: raw.workspaceId,
       roleId: raw.roleId,
+      clientId: raw.clientId,
+      advertiserId: raw.advertiserId,
       joinedAt: raw.joinedAt,
     };
   }
