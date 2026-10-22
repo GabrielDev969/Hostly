@@ -1,0 +1,29 @@
+{
+  "extends": "@hostly/config/tsconfig/node.json",
+  "compilerOptions": {
+    "types": ["node", "jest"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "removeComments": true,
+    "rootDir": ".",
+    "outDir": "./dist",
+    // DTOs (class-validator) and entities are filled by the framework, not by constructors.
+    "strictPropertyInitialization": false,
+    "paths": {
+      "@core/*": ["./src/core/*"],
+      "@modules/*": ["./src/modules/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@generated/*": ["./src/generated/*"],
+      "@test/*": ["./test/*"],
+      "src/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "src/**/*",
+    "prisma/**/*",
+    "test/**/*",
+    "scripts/**/*",
+    "prisma.config.ts",
+    "jest.config.ts"
+  ]
+}

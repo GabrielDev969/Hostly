@@ -1,0 +1,264 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  name         String
+  passwordHash String?
+
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean @default(false)
+  recoveryCodes    String?
+
+  emailVerifiedAt      DateTime?
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
+  tokensInvalidatedAt  DateTime?
+
+  ownedOrganizations   Organization[]         @relation("OrganizationOwner")
+  ownedWorkspaces      Workspace[]            @relation("WorkspaceOwner")
+  memberships          WorkspaceMember[]
+  sessions             Session[]
+  auditLogs            AuditLog[]
+  invitationsSent      Invitation[]           @relation("InvitedBy")
+  emailVerifyTokens    EmailVerifyToken[]
+  passwordResetTokens  PasswordResetToken[]
+  passwordHistory      PasswordHistory[]
+
+  deletedAt     DateTime?
+  anonymizedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([deletedAt])
+  @@index([anonymizedAt])
+}
+
+model EmailVerifyToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordHistory {
+  id           String @id @default(uuid())
+  userId       String
+  passwordHash String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model Organization {
+  id      String @id @default(uuid())
+  name    String
+  slug    String @unique
+  ownerId String
+  owner   User   @relation("OrganizationOwner", fields: [ownerId], references: [id])
+
+  workspaces Workspace[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([ownerId])
+  @@index([deletedAt])
+}
+
+model Workspace {
+  id             String @id @default(uuid())
+  name           String
+  slug           String @unique
+  isPersonal     Boolean @default(false)
+  ownerId        String
+  organizationId String
+
+  owner        User         @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  members      WorkspaceMember[]
+  roles        Role[]
+  invitations  Invitation[]
+  auditLogs    AuditLog[]
+  permissions  Permission[]
+  featureFlags WorkspaceFeatureFlag[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([ownerId])
+  @@index([organizationId])
+  @@index([deletedAt])
+}
+
+model WorkspaceMember {
+  id          String @id @default(uuid())
+  userId      String
+  workspaceId String
+  roleId      String
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  role      Role      @relation(fields: [roleId], references: [id])
+
+  joinedAt DateTime @default(now())
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+}
+
+model Invitation {
+  id          String   @id @default(uuid())
+  email       String
+  workspaceId String
+  roleId      String
+  invitedById String
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation("InvitedBy", fields: [invitedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+model Role {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  workspaceId String
+  isSystem    Boolean @default(false)
+
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  members     WorkspaceMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workspaceId, name])
+}
+
+model Permission {
+  id          String  @id @default(uuid())
+  key         String
+  description String?
+  category    String
+  workspaceId String?
+
+  workspace Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  roles     RolePermission[]
+
+  // Uniqueness is enforced by partial unique indexes created in migration SQL:
+  //   - one row per key when workspaceId IS NULL  (global permissions)
+  //   - one row per (workspaceId, key) when workspaceId IS NOT NULL
+  @@index([workspaceId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model WorkspaceFeatureFlag {
+  id          String  @id @default(uuid())
+  workspaceId String
+  key         String
+  enabled     Boolean
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workspaceId, key])
+  @@index([key])
+}
+
+model Session {
+  id               String    @id @default(uuid())
+  userId           String
+  refreshTokenHash String    @unique
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  lastUsedAt       DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  workspaceId String?
+  action      String
+  resource    String?
+  resourceId  String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+
+  prevHash String?
+  hash     String  @unique
+
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([action])
+  @@index([createdAt])
+}

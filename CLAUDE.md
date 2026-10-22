@@ -59,10 +59,16 @@ Pré-requisito: `nvm use` (Node 24.22.1, fixado no `.nvmrc`). O pnpm 12.15.0 vem
 | `pnpm build` | Build de tudo, na ordem das dependências, com cache do Turborepo |
 | `pnpm lint` | ESLint (flat config de `@hostly/config/eslint`) |
 | `pnpm typecheck` | `tsc` sem emitir |
-| `pnpm test` | Testes |
+| `pnpm test` | Testes unitários (sem Docker) |
+| `pnpm test:e2e` | Testes e2e; os da API usam Testcontainers e precisam do Docker/OrbStack |
 | `pnpm format` / `pnpm format:check` | Prettier escreve / confere (ignora `*.md` e `apps/robot`) |
 | `pnpm turbo run <tarefa> --filter <pacote>` | Roda uma tarefa num pacote só, ex.: `--filter @hostly/config` |
 | `cp .env.example .env` | Cria o `.env` local (uma vez; o git ignora) |
+| `pnpm --filter @hostly/api env:keys` | Imprime chaves JWT e `ENCRYPTION_KEY` de desenvolvimento pra colar no `.env` |
+| `pnpm --filter @hostly/api dev` | Sobe só a API em watch (porta `API_PORT`; Swagger em `/docs`) |
+| `pnpm --filter @hostly/api db:migrate` | `prisma migrate dev`: cria e aplica migração em desenvolvimento |
+| `pnpm --filter @hostly/api db:deploy` | `prisma migrate deploy`: aplica as migrações pendentes |
+| `pnpm --filter @hostly/api db:seed` | Seed idempotente: permissões e admin (`SUPER_ADMIN_*` do `.env`) |
 | `docker compose up -d --wait` | Sobe Postgres, Redis e SeaweedFS e espera ficarem saudáveis; o `storage-init` cria o bucket e o CORS logo depois |
 | `docker compose ps -a` | Status dos serviços (`storage-init` termina com `Exited (0)`) |
 | `docker compose logs -f <serviço>` | Logs de um serviço: `postgres`, `redis`, `storage` ou `storage-init` |
@@ -71,10 +77,13 @@ Pré-requisito: `nvm use` (Node 24.22.1, fixado no `.nvmrc`). O pnpm 12.15.0 vem
 
 Configs compartilhadas em `packages/config`: `tsconfig/base.json`, `tsconfig/node.json` (API e worker),
 `tsconfig/nextjs.json` (painel), `eslint` e `prettier`. No `eslint.config.js` de cada app, somar
-`parserOptions.tsconfigRootDir: import.meta.dirname`.
+`parserOptions.tsconfigRootDir: import.meta.dirname` (a API usa `eslint.config.mjs`, porque o pacote é CommonJS como o
+NestJS). Dependência nova com script de build precisa entrar no `allowBuilds` do `pnpm-workspace.yaml`, senão o
+`pnpm install` falha.
 
-Ainda não existem: api, web e worker entram no `pnpm dev` quando nascerem (#15, #19, #30); `apps/robot` é Gradle,
-fora do pnpm, e os comandos dele chegam na #23.
+A API (`apps/api`) tem regras próprias em [`apps/api/CLAUDE.md`](apps/api/CLAUDE.md) e lê o `.env` da raiz. Ainda não
+existem: web e worker entram no `pnpm dev` quando nascerem (#19, #30); `apps/robot` é Gradle, fora do pnpm, e os
+comandos dele chegam na #23.
 
 ## Regras críticas
 
