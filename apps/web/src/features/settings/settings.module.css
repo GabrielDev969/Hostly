@@ -173,6 +173,8 @@
 }
 
 .tableWrap {
+  /* Positioned, so visually hidden text in the table is clipped with it instead of widening the page. */
+  position: relative;
   overflow-x: auto;
 }
 
