@@ -199,6 +199,7 @@ Stack: Jest 30 + Supertest 7 + @nestjs/testing 11 + @testcontainers/postgresql 1
 - E2E: import dos helpers no top, mas `createTestApp` via `require()` lazy dentro do `beforeAll` para que o container já esteja de pé antes do AppModule ler `DATABASE_URL`.
 - Reset entre testes via `resetDatabase()` (TRUNCATE com CASCADE), não `DROP/CREATE`.
 - Stub do `nanoid` em `test/stubs/nanoid.ts` (ESM-only). Outras libs ESM resolvem com `customExportConditions: ["node"]` no jest-e2e.
+- `@hostly/contracts` (ESM do workspace): o `moduleNameMapper` dos dois configs aponta pro `src` do pacote e o `test/transformers/esm-source.mjs` o compila pra CommonJS (o ts-jest manteria ESM, pelo `"type": "module"`). Fora do Jest, a API carrega o `dist` por `require(esm)`.
 
 **Comandos:**
 ```bash
