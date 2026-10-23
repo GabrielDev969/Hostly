@@ -1,7 +1,13 @@
+import { randomBytes } from 'crypto';
 import Redis from 'ioredis';
 import { LIVE_SOCKET_CLOSE, LIVE_SOCKET_PATH, type LiveEvent } from '@hostly/contracts';
 import { CryptoUtil } from '../src/shared/utils/crypto.util';
 import { RedeemLiveTicketUseCase } from '../src/modules/live/use-cases/redeem-live-ticket.use-case';
+import {
+  BLOCKED_IP_ATTEMPT_INTERVAL_MS,
+  HANDSHAKE_REFUSALS_PER_WINDOW,
+  HandshakeLimiter,
+} from '../src/shared/websocket/handshake-guard';
 import { LIVE_TICKET_PREFIX } from '../src/modules/live/services/live-ticket-store';
 import { getPrisma, stopTestDatabase } from './helpers/test-database';
 import { resetPairingLimits } from './helpers/pairing-limits';
@@ -241,6 +247,50 @@ describe('Live channel for the panel (e2e)', () => {
     it('closes the socket at the end of its lifetime', async () => {
       const client = await watch('operator');
       await expect(client.closed).resolves.toBe(LIVE_SOCKET_CLOSE.expired);
+    });
+  });
+
+  // Last in the suite: it leaves 127.0.0.1 blocked for the rest of the window.
+  describe('with the IP blocked by a burst of unknown tickets', () => {
+    let redeem: jest.SpyInstance;
+
+    beforeAll(() => {
+      // A fresh limiter: the window starts with the burst below, so it outlasts this test whatever ran before.
+      // Required here: the gateway reads env.config, which must load after the test database is up.
+      const { LiveGateway } =
+        require('../src/modules/live/http/live.gateway') as typeof import('../src/modules/live/http/live.gateway');
+      Object.assign(fleet.app.get(LiveGateway), { handshakes: new HandshakeLimiter() });
+      redeem = jest.spyOn(fleet.app.get(RedeemLiveTicketUseCase), 'execute');
+    });
+
+    afterAll(() => redeem.mockRestore());
+
+    it('lets a panel in at the next attempt, asking Redis only for the handshakes it lets through', async () => {
+      const statuses: string[] = [];
+      while (!statuses.includes('HTTP 429') && statuses.length < 50) {
+        statuses.push(await refused(openLive(fleet.api, randomBytes(32).toString('hex'))));
+      }
+      expect(statuses.indexOf('HTTP 429')).toBe(HANDSHAKE_REFUSALS_PER_WINDOW);
+      expect(redeem).toHaveBeenCalledTimes(HANDSHAKE_REFUSALS_PER_WINDOW);
+
+      // A good ticket waits for the IP's next attempt; the refused tries leave it unredeemed.
+      const started = Date.now();
+      await expect(refused(openLive(fleet.api, await ticket('operator')))).resolves.toBe(
+        'HTTP 429',
+      );
+      const client = await waitFor(
+        async () =>
+          openLive(fleet.api, await ticket('operator')).catch((error: Error) => {
+            if (error.message === 'HTTP 429') return null;
+            throw error;
+          }),
+        'the panel getting in',
+        BLOCKED_IP_ATTEMPT_INTERVAL_MS + 2_000,
+      );
+      clients.push(client);
+
+      expect(Date.now() - started).toBeLessThanOrEqual(BLOCKED_IP_ATTEMPT_INTERVAL_MS + 1_000);
+      expect(redeem).toHaveBeenCalledTimes(HANDSHAKE_REFUSALS_PER_WINDOW + 1);
     });
   });
 

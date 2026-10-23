@@ -114,14 +114,20 @@ export class LiveGateway
 
   // Null when accepted, otherwise the HTTP status of the refusal. The upgrade bypasses Express and its throttler,
   // so a bad Origin, a malformed ticket or an IP with too many refusals stops here, before Redis is asked anything.
+  // A blocked IP still gets a paced attempt through; what would be refused without I/O never spends it.
   private async verify(req: IncomingMessage, origin: string | undefined): Promise<number | null> {
     const ip = clientIp(req, env.TRUST_PROXY);
-    if (this.handshakes.isBlocked(ip)) return 429;
-    if (!origin || !corsOrigins.includes(origin)) return this.refuse(ip, 'origin not allowed', 403);
+    const blocked = this.handshakes.isBlocked(ip);
+    if (!origin || !corsOrigins.includes(origin)) {
+      return blocked ? 429 : this.refuse(ip, 'origin not allowed', 403);
+    }
     const ticket = offeredProtocols(req)
       .find((protocol) => protocol.startsWith(LIVE_TICKET_PROTOCOL_PREFIX))
       ?.slice(LIVE_TICKET_PROTOCOL_PREFIX.length);
-    if (!ticket || !SECRET_FORMAT.test(ticket)) return this.refuse(ip, 'malformed ticket', 401);
+    if (!ticket || !SECRET_FORMAT.test(ticket)) {
+      return blocked ? 429 : this.refuse(ip, 'malformed ticket', 401);
+    }
+    if (blocked && !this.handshakes.admit(ip)) return 429;
     const viewer = await this.redeemTicket.execute(ticket);
     if (!viewer) return this.refuse(ip, 'unknown ticket', 401);
     if (this.socketsOf(viewer.userId) >= MAX_SOCKETS_PER_USER) return 429;

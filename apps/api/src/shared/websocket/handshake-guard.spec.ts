@@ -1,5 +1,11 @@
 import type { IncomingMessage } from 'http';
-import { clientIp, HandshakeLimiter, MAX_TRACKED_IPS, SECRET_FORMAT } from './handshake-guard';
+import {
+  BLOCKED_IP_ATTEMPT_INTERVAL_MS,
+  clientIp,
+  HandshakeLimiter,
+  MAX_TRACKED_IPS,
+  SECRET_FORMAT,
+} from './handshake-guard';
 
 const request = (remoteAddress: string, forwardedFor?: string) =>
   ({
@@ -35,6 +41,49 @@ describe('HandshakeLimiter', () => {
     expect(limiter.isBlocked('ip', 500)).toBe(true);
     expect(limiter.isBlocked('other', 500)).toBe(false);
     expect(limiter.isBlocked('ip', 1_000)).toBe(false);
+  });
+
+  describe('with the IP blocked', () => {
+    beforeEach(() => jest.useFakeTimers({ now: 0 }));
+    afterEach(() => jest.useRealTimers());
+
+    const blocked = () => {
+      const limiter = new HandshakeLimiter(3, 60_000);
+      for (let i = 0; i < 3; i += 1) limiter.recordRefusal('ip');
+      return limiter;
+    };
+
+    it('lets one attempt through every 5 s and refuses the others', () => {
+      const limiter = blocked();
+      expect(limiter.admit('ip')).toBe(false);
+      jest.advanceTimersByTime(BLOCKED_IP_ATTEMPT_INTERVAL_MS - 1);
+      expect(limiter.admit('ip')).toBe(false);
+      jest.advanceTimersByTime(1);
+      expect([limiter.admit('ip'), limiter.admit('ip')]).toEqual([true, false]);
+      jest.advanceTimersByTime(BLOCKED_IP_ATTEMPT_INTERVAL_MS);
+      expect([limiter.admit('ip'), limiter.admit('ip')]).toEqual([true, false]);
+      expect(limiter.isBlocked('ip')).toBe(true);
+    });
+
+    it('lets at most 12 attempts through in a minute, however many come', () => {
+      const limiter = blocked();
+      let admitted = 0;
+      for (let t = 0; t < 60_000; t += 100) {
+        jest.setSystemTime(t);
+        if (limiter.admit('ip')) admitted += 1;
+      }
+      expect(admitted).toBeLessThanOrEqual(12);
+      expect(admitted).toBeGreaterThanOrEqual(11);
+    });
+
+    it('lets everything through once the window ends, and never holds back a free IP', () => {
+      const limiter = blocked();
+      expect(limiter.admit('other')).toBe(true);
+      expect(limiter.admit('other')).toBe(true);
+      expect(limiter.trackedIps).toBe(1);
+      jest.advanceTimersByTime(60_000);
+      expect([limiter.admit('ip'), limiter.admit('ip')]).toEqual([true, true]);
+    });
   });
 
   it('keeps at most MAX_TRACKED_IPS windows, dropping the oldest', () => {

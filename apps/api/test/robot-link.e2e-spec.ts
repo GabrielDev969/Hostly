@@ -3,6 +3,11 @@ import type { Socket } from 'net';
 import WebSocket from 'ws';
 import { CONTRACT_VERSION, ROBOT_SOCKET_CLOSE } from '@hostly/contracts';
 import { RobotAuthService } from '../src/modules/robots/services/robot-auth.service';
+import {
+  BLOCKED_IP_ATTEMPT_INTERVAL_MS,
+  HANDSHAKE_REFUSALS_PER_WINDOW,
+  HandshakeLimiter,
+} from '../src/shared/websocket/handshake-guard';
 import { getPrisma, stopTestDatabase } from './helpers/test-database';
 import { resetPairingLimits } from './helpers/pairing-limits';
 import { captureOutput, openLive, setupFleet, waitFor, type Fleet } from './helpers/fleet';
@@ -408,31 +413,125 @@ describe('Robot socket (e2e)', () => {
 
       await expect(third.closed).resolves.toMatchObject({ code: ROBOT_SOCKET_CLOSE.rateLimited });
     });
+  });
 
-    // Last in the suite: it leaves 127.0.0.1 blocked for the rest of the window.
-    it('refuses a burst of bad handshakes without asking the database', async () => {
-      const robot = await pair();
-      const lookups = jest.spyOn(fleet.app.get(RobotAuthService), 'authenticateHash');
-      const url = socketUrl(fleet.api);
+  // Last in the suite: it leaves 127.0.0.1 blocked for the rest of the window. The tests run in order.
+  describe('with the IP blocked by a burst of bad tokens', () => {
+    let lookups: jest.SpyInstance;
+    let known: PairedRobot & { serial: string };
+    let revoked: PairedRobot & { serial: string };
+    let fresh: PairedRobot & { serial: string };
 
-      await expect(refusal(url, { authorization: 'Bearer not-hex' })).resolves.toBe(401);
+    const tryToken = (token: string) =>
+      refusal(socketUrl(fleet.api), { authorization: `Bearer ${token}` });
+    const tryBadToken = () => tryToken(randomBytes(32).toString('hex'));
+    // Bad tokens until one reaches the database: the blocked IP's attempt is then spent for the next 5 s.
+    const spendAttempt = async () => {
+      while ((await tryBadToken()) !== 401);
+    };
+    // Bad tokens without pause, as someone on the same Wi-Fi would send them.
+    const attack = () => {
+      let running = true;
+      let reached = 0;
+      const done = (async () => {
+        while (running) if ((await tryBadToken()) === 401) reached += 1;
+      })();
+      return {
+        reached: () => reached,
+        stop: async () => {
+          running = false;
+          await done;
+        },
+      };
+    };
+
+    beforeAll(async () => {
+      await resetPairingLimits();
+      [known, revoked, fresh] = [await pair(), await pair(), await pair()];
+      for (const robot of [known, revoked]) {
+        const link = await connect(robot, { hello: false });
+        link.close();
+        await link.closed;
+      }
+      await fleet.as('operator').post(`/api/v1/robots/${revoked.robotId}/revoke`).expect(200);
+      // A fresh limiter: the window starts with the burst below, so it outlasts these tests whatever ran before.
+      // Required here: the gateway reads env.config, which must load after the test database is up.
+      const { RobotLinkGateway } =
+        require('../src/modules/robot-link/http/robot-link.gateway') as typeof import('../src/modules/robot-link/http/robot-link.gateway');
+      Object.assign(fleet.app.get(RobotLinkGateway), { handshakes: new HandshakeLimiter() });
+      lookups = jest.spyOn(fleet.app.get(RobotAuthService), 'authenticateHash');
+    });
+
+    afterAll(() => lookups.mockRestore());
+
+    it('refuses a burst of bad handshakes, asking the database only for those it lets through', async () => {
+      await expect(tryToken('not-hex')).resolves.toBe(401);
       expect(lookups).not.toHaveBeenCalled();
 
+      const started = Date.now();
       const statuses: number[] = [];
-      for (let i = 0; i < 30; i += 1) {
-        const token = randomBytes(32).toString('hex');
-        statuses.push(await refusal(url, { authorization: `Bearer ${token}` }));
-      }
-      const firstBlocked = statuses.indexOf(429);
-      expect(firstBlocked).toBeGreaterThan(0);
-      expect(statuses.slice(0, firstBlocked).every((status) => status === 401)).toBe(true);
-      expect(statuses.slice(firstBlocked).every((status) => status === 429)).toBe(true);
-      expect(lookups).toHaveBeenCalledTimes(firstBlocked);
+      while (!statuses.includes(429) && statuses.length < 50) statuses.push(await tryBadToken());
+      for (let i = 0; i < 10; i += 1) statuses.push(await tryBadToken());
+      const elapsed = Date.now() - started;
 
-      // Blocked means blocked, even with a valid token, until the window ends.
-      await expect(connect(robot)).rejects.toEqual(new SocketRefusedError(429));
-      expect(lookups).toHaveBeenCalledTimes(firstBlocked);
-      lookups.mockRestore();
+      // The malformed token above was the first refusal of the window.
+      expect(statuses.indexOf(429)).toBe(HANDSHAKE_REFUSALS_PER_WINDOW - 1);
+      const reached = statuses.filter((status) => status === 401).length;
+      expect(lookups).toHaveBeenCalledTimes(reached);
+      expect(reached).toBeLessThanOrEqual(
+        HANDSHAKE_REFUSALS_PER_WINDOW - 1 + Math.floor(elapsed / BLOCKED_IP_ATTEMPT_INTERVAL_MS),
+      );
+
+      // A valid token of a robot that never connected waits for the IP's next attempt, like anyone else.
+      await expect(connect(fresh)).rejects.toEqual(new SocketRefusedError(429));
+      expect(lookups).toHaveBeenCalledTimes(reached);
+    });
+
+    it('lets a robot that connected before back in at once during the attack, at a pace of its own', async () => {
+      const attacker = attack();
+      try {
+        await waitFor(() => attacker.reached() > 0, 'the attacker spending the attempt of the IP');
+
+        // The IP's attempt is spent for the next 5 s, so only the known token gets this robot in.
+        await connect(known);
+        await expect(connect(known)).rejects.toEqual(new SocketRefusedError(429));
+        await waitFor(() => online(known.robotId), 'known robot online');
+      } finally {
+        await attacker.stop();
+      }
+    });
+
+    it('drops a revoked token from the list: it waits like a stranger and gets 401', async () => {
+      await spendAttempt();
+      await expect(tryToken(revoked.deviceToken)).resolves.toBe(429);
+
+      const status = await waitFor(
+        async () => {
+          const result = await tryToken(revoked.deviceToken);
+          return result === 429 ? null : result;
+        },
+        'the revoked token reaching the database',
+        BLOCKED_IP_ATTEMPT_INTERVAL_MS + 2_000,
+      );
+      expect(status).toBe(401);
+    });
+
+    it('lets a robot that never connected in at the next attempt once the attack stops', async () => {
+      const before = lookups.mock.calls.length;
+      const started = Date.now();
+      await waitFor(
+        () =>
+          connect(fresh, { hello: false }).catch((error: unknown) => {
+            if (error instanceof SocketRefusedError && error.status === 429) return null;
+            throw error;
+          }),
+        'the robot that never connected getting in',
+        BLOCKED_IP_ATTEMPT_INTERVAL_MS + 2_000,
+      );
+
+      expect(Date.now() - started).toBeLessThanOrEqual(BLOCKED_IP_ATTEMPT_INTERVAL_MS + 1_000);
+      // The refused retries cost nothing: the only lookup is the handshake that got through.
+      expect(lookups.mock.calls.length - before).toBe(1);
     });
   });
 

@@ -139,10 +139,14 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
 - **Handshake dos dois sockets:** o upgrade não passa pelo Express nem pelo throttler. Por isso, antes de qualquer
   I/O, o `verify()` recusa token ou ticket fora de `/^[0-9a-f]{64}$/` e IP com recusas demais
   (`HandshakeLimiter`, em memória, com o IP calculado como o `req.ip` do Express pelo `TRUST_PROXY`; 429 até a janela
-  acabar). Cada recusa vira log com o IP e o motivo, nunca com o segredo. `closeTimeout` de 3 s: o `ws` ainda entrega
-  mensagens de um socket em CLOSING, e o `RobotConnection.closing` faz o gateway ignorá-las. O hello só registra a
-  conexão (e derruba a anterior com `4409`) depois de revalidar o token, dentro da fila de escritas do robô. No máximo
-  2 sockets por robô esperando hello e 5 sockets de painel por usuário; o painel que manda qualquer coisa leva `1008`.
+  acabar, mas o IP bloqueado ainda tem 1 tentativa a cada 5 s, gasta só por handshake que passou do formato e do
+  `Origin`). No robô, o hash de token que já autenticou (`KnownRobotTokens`, em memória, vazio no restart, sai com o
+  `RobotTokenEvents` ou numa autenticação que falha) passa pelo IP bloqueado no ritmo dele, 1 a cada 2 s, e ainda
+  autentica no banco. Cada recusa vira log com o IP e o motivo, nunca com o segredo. `closeTimeout` de 3 s: o `ws`
+  ainda entrega mensagens de um socket em CLOSING, e o `RobotConnection.closing` faz o gateway ignorá-las. O hello só
+  registra a conexão (e derruba a anterior com `4409`) depois de revalidar o token, dentro da fila de escritas do
+  robô. No máximo 2 sockets por robô esperando hello e 5 sockets de painel por usuário; o painel que manda qualquer
+  coisa leva `1008`.
 - **Uma instância na v1:** o registro de conexões do robô (`RobotConnectionRegistry`) e o barramento de eventos do
   painel (`LiveEventBus`) ficam em memória, atrás de abstract classes. Com mais de uma instância, os dois passam pro
   Redis (registro compartilhado pra "a conexão nova derruba a antiga" e pub/sub pros eventos).

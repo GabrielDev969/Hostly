@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { Params } from 'nestjs-pino';
 import type { IncomingMessage, ServerResponse } from 'http';
-import { env } from './env.config';
+import { env, type Env } from './env.config';
 
 const REQUEST_ID_HEADER = 'x-request-id';
 
@@ -15,7 +15,11 @@ const defaultLogLevel =
   env.LOG_LEVEL ??
   (env.NODE_ENV === 'test' ? 'silent' : env.NODE_ENV === 'production' ? 'info' : 'debug');
 
-const usePretty = env.LOG_PRETTY ?? env.NODE_ENV !== 'production';
+export function prettyLogs(config: Pick<Env, 'LOG_PRETTY' | 'NODE_ENV'>): boolean {
+  return config.LOG_PRETTY ?? config.NODE_ENV !== 'production';
+}
+
+const usePretty = prettyLogs(env);
 
 export const loggerConfig: Params = {
   pinoHttp: {
