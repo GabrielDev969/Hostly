@@ -43,7 +43,7 @@ export function InviteDialog({
   const needsClient = role ? roleScope(role.name) === 'client' : false;
 
   const invite = useMutation({
-    // The 201 carries the acceptance token; it is dropped here, never kept in the cache, shown or logged.
+    // Only success matters: the screen reloads the pending list from the API.
     mutationFn: async (body: { email: string; roleId: string; clientId?: string }) => {
       await unwrap(
         api().POST('/api/v1/invitations', {

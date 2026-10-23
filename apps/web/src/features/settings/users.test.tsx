@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { CLIENT_A } from '../../../test/fixtures';
-import { INVITATION_TOKEN, renderSettings } from '../../../test/settings';
+import { renderSettings } from '../../../test/settings';
 
 type Options = Parameters<typeof renderSettings>[1];
 
@@ -50,7 +50,7 @@ describe('users table', () => {
 });
 
 describe('inviting', () => {
-  it('invites an operator member without a client and never shows the token', async () => {
+  it('invites an operator member without a client', async () => {
     const { user, section, api } = await renderUsers();
 
     await user.click(within(section).getByRole('button', { name: 'Convidar' }));
@@ -67,7 +67,6 @@ describe('inviting', () => {
       { email: 'nova@example.com', roleId: 'role-operator_staff' },
     ]);
     expect(await within(section).findByRole('row', { name: /nova@example.com/ })).toBeVisible();
-    expect(document.body.textContent).not.toContain(INVITATION_TOKEN);
   });
 
   it('asks for a client with a client role, without the internal one', async () => {

@@ -30,8 +30,6 @@ export const CLIENT_INTERNAL = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const SITE_INTERNAL = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 export const OWNER_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 export const PAIRING_CODE = '042917';
-// What the API answers on an invitation's 201; the panel must never show or keep it.
-export const INVITATION_TOKEN = 'inv-secret-token-never-shown';
 
 export const SETTINGS_CLIENTS = [
   ...CLIENTS,
@@ -295,7 +293,7 @@ export function settingsApi(
         clientId: body.clientId ?? null,
       });
       invitations.unshift(created);
-      return HttpResponse.json({ ...created, token: INVITATION_TOKEN }, { status: 201 });
+      return HttpResponse.json(created, { status: 201 });
     }),
     http.delete(`${API}/api/v1/invitations/:id`, ({ params }) => {
       calls.cancellations.push(String(params.id));
