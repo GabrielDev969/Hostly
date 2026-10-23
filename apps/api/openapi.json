@@ -4999,6 +4999,113 @@
         ]
       }
     },
+    "/api/v1/robots/{id}/telemetry": {
+      "get": {
+        "operationId": "RobotsController_telemetry_v1",
+        "parameters": [
+          {
+            "name": "x-workspace-id",
+            "in": "header",
+            "description": "ID of the workspace context",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "hours",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 24,
+              "default": 24,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RobotTelemetryHistoryDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but lacks the required permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Robot not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Battery and mode history in 5-minute buckets; a client user sees only the time the robot was theirs",
+        "tags": [
+          "Robots"
+        ]
+      }
+    },
     "/api/v1/robots/{id}/move": {
       "post": {
         "operationId": "RobotsController_move_v1",
@@ -7505,6 +7612,86 @@
         "required": [
           "code",
           "siteId"
+        ]
+      },
+      "RobotTelemetryPointDto": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-05-09T12:35:00.000Z",
+            "description": "Start of the bucket"
+          },
+          "battery": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Average battery in the bucket; null when the robot did not report it"
+          },
+          "charging": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "What most samples of the bucket said"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "promotion",
+              "cruise",
+              "guide",
+              "reception",
+              "base",
+              "suspended"
+            ],
+            "description": "Mode of most samples of the bucket"
+          },
+          "samples": {
+            "type": "number",
+            "description": "Telemetry messages in the bucket"
+          }
+        },
+        "required": [
+          "at",
+          "battery",
+          "charging",
+          "mode",
+          "samples"
+        ]
+      },
+      "RobotTelemetryHistoryDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-05-08T12:40:00.000Z"
+          },
+          "to": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-05-09T12:40:00.000Z",
+            "description": "End of the current bucket"
+          },
+          "bucketMinutes": {
+            "type": "number",
+            "example": 5
+          },
+          "points": {
+            "description": "Buckets with samples, oldest first; a missing bucket is time without telemetry",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RobotTelemetryPointDto"
+            }
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "bucketMinutes",
+          "points"
         ]
       },
       "RenameRobotDto": {

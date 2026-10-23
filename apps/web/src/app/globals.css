@@ -14,6 +14,12 @@
   --color-border: #dce4f2;
   --color-danger: #b42318;
   --color-danger-bg: #fef3f2;
+  --color-danger-hover: #912018;
+  --color-success: #067647;
+  --color-success-bg: #ecfdf3;
+  --color-warning: #93370d;
+  --color-warning-bg: #fffaeb;
+  --color-backdrop: rgb(11 21 48 / 0.45);
 
   --sidebar-bg: #0a1a3f;
   --sidebar-item-active-bg: #13285c;

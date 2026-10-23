@@ -7,6 +7,8 @@ import { RobotsRepository } from './repositories/robots.repository.interface';
 import { PrismaRobotsRepository } from './repositories/prisma-robots.repository';
 import { RobotPairingsRepository } from './repositories/robot-pairings.repository.interface';
 import { PrismaRobotPairingsRepository } from './repositories/prisma-robot-pairings.repository';
+import { TelemetryHistoryRepository } from './repositories/telemetry-history.repository.interface';
+import { PrismaTelemetryHistoryRepository } from './repositories/prisma-telemetry-history.repository';
 import {
   PAIRING_REDIS,
   PairingRateLimiter,
@@ -27,6 +29,7 @@ import { GetRobotUseCase } from './use-cases/get-robot.use-case';
 import { RenameRobotUseCase } from './use-cases/rename-robot.use-case';
 import { MoveRobotUseCase } from './use-cases/move-robot.use-case';
 import { RevokeRobotUseCase } from './use-cases/revoke-robot.use-case';
+import { GetRobotTelemetryUseCase } from './use-cases/get-robot-telemetry.use-case';
 
 @Module({
   imports: [WorkspacesModule, SitesModule],
@@ -34,6 +37,7 @@ import { RevokeRobotUseCase } from './use-cases/revoke-robot.use-case';
   providers: [
     { provide: RobotsRepository, useClass: PrismaRobotsRepository },
     { provide: RobotPairingsRepository, useClass: PrismaRobotPairingsRepository },
+    { provide: TelemetryHistoryRepository, useClass: PrismaTelemetryHistoryRepository },
     {
       provide: PAIRING_REDIS,
       // Real Redis in tests too, unlike the cache and idempotency stores: the limits must hold.
@@ -60,6 +64,7 @@ import { RevokeRobotUseCase } from './use-cases/revoke-robot.use-case';
     RenameRobotUseCase,
     MoveRobotUseCase,
     RevokeRobotUseCase,
+    GetRobotTelemetryUseCase,
   ],
   exports: [RobotAuthService, RobotTokenEvents],
 })

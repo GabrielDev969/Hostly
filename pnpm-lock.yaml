@@ -405,6 +405,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@hostly/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@next/env':
         specifier: 16.4.2
         version: 16.4.2

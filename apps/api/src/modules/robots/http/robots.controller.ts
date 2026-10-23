@@ -35,11 +35,14 @@ import { RobotResponseDto } from './dto/robot-response.dto';
 import { ListRobotsQueryDto } from './dto/list-robots-query.dto';
 import { RenameRobotDto } from './dto/rename-robot.dto';
 import { MoveRobotDto } from './dto/move-robot.dto';
+import { RobotTelemetryQueryDto } from './dto/robot-telemetry-query.dto';
+import { RobotTelemetryHistoryDto } from './dto/robot-telemetry-history.dto';
 import { ListRobotsUseCase } from '../use-cases/list-robots.use-case';
 import { GetRobotUseCase } from '../use-cases/get-robot.use-case';
 import { RenameRobotUseCase } from '../use-cases/rename-robot.use-case';
 import { MoveRobotUseCase } from '../use-cases/move-robot.use-case';
 import { RevokeRobotUseCase } from '../use-cases/revoke-robot.use-case';
+import { GetRobotTelemetryUseCase } from '../use-cases/get-robot-telemetry.use-case';
 
 @ApiTags('Robots')
 @ApiBearerAuth()
@@ -57,6 +60,7 @@ export class RobotsController {
     private readonly renameRobot: RenameRobotUseCase,
     private readonly moveRobot: MoveRobotUseCase,
     private readonly revokeRobot: RevokeRobotUseCase,
+    private readonly getTelemetry: GetRobotTelemetryUseCase,
   ) {}
 
   @Get()
@@ -84,6 +88,25 @@ export class RobotsController {
   @ApiServerError()
   async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<RobotResponseDto> {
     return this.getRobot.execute(id);
+  }
+
+  @Get(':id/telemetry')
+  @RequirePermissions(PERMISSIONS.ROBOT.READ)
+  @ApiOperation({
+    summary:
+      'Battery and mode history in 5-minute buckets; a client user sees only the time the robot was theirs',
+  })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: RobotTelemetryHistoryDto })
+  @ApiValidationError()
+  @ApiAuthErrors()
+  @ApiNotFoundError('Robot')
+  @ApiServerError()
+  async telemetry(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: RobotTelemetryQueryDto,
+  ): Promise<RobotTelemetryHistoryDto> {
+    return this.getTelemetry.execute({ id, hours: query.hours });
   }
 
   @Patch(':id')

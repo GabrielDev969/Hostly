@@ -1,0 +1,236 @@
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.back {
+  margin: 0 0 12px;
+}
+
+.liveNotice {
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border-radius: var(--radius-item);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.liveNoticeEmpty {
+  margin: 0;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table thead th {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.table tbody th {
+  font-weight: 600;
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.online {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.offline {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+}
+
+.inactive {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.charging {
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--card-padding);
+  min-width: 0;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.panelTitle {
+  margin-bottom: 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.fields {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.fieldRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.fieldRow dt {
+  color: var(--color-text-muted);
+}
+
+.fieldRow dd {
+  margin: 0;
+  text-align: right;
+}
+
+.emergency {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-item);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chartGrid {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+.chartLabel {
+  fill: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.chartLine {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chartDot {
+  fill: var(--color-primary);
+}
+
+.chartTable {
+  margin-top: 12px;
+}
+
+.chartTable summary {
+  cursor: pointer;
+  color: var(--color-link);
+}
+
+.actions {
+  display: grid;
+  gap: 20px;
+}
+
+.actionForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-weight: 500;
+}
+
+.input {
+  height: var(--button-height);
+  padding: 0 12px;
+  border: 1px solid var(--color-text-muted);
+  border-radius: var(--radius-item);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.actionError {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-item);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.actionNotice {
+  margin: 12px 0 0;
+  color: var(--color-success);
+}
+
+.actionNotice:empty {
+  margin: 0;
+}
