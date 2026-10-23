@@ -11,6 +11,7 @@ import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
 import { addScopedMember, provisionOperator } from './helpers/operator';
+import { holdTransaction, inFlight, waitUntilBlockedBy } from './helpers/held-transaction';
 
 const PASSWORD = 'StrongPass@123';
 
@@ -446,6 +447,93 @@ describe('Clients and sites (e2e)', () => {
         })
         .expect(403);
       await as('clientAdminA').get('/api/v1/invitations').expect(403);
+    });
+  });
+
+  // A transaction held open by the test stands in for the other request, so each run takes the
+  // same interleaving: the request is proven to wait on that transaction's lock, then answers.
+  describe('racing a client delete', () => {
+    const markDeleted = (id: string) =>
+      holdTransaction((tx) => tx.client.update({ where: { id }, data: { deletedAt: new Date() } }));
+
+    it('makes a new site wait for the delete, then refuses it', async () => {
+      const id = await createClient('Shopping R1');
+      const deleting = await markDeleted(id);
+      try {
+        const creating = inFlight(
+          as('opAdminX').post('/api/v1/sites', {
+            clientId: id,
+            name: 'R1 - Piso L1',
+            timezone: 'America/Sao_Paulo',
+          }),
+        );
+        await waitUntilBlockedBy(deleting.pid);
+        expect(creating.answered()).toBe(false);
+
+        await deleting.commit();
+        const res = await creating.response;
+        expect(res.status).toBe(404);
+        expect(res.body.message).toBe('Client not found');
+        expect(await getPrisma().site.count({ where: { clientId: id } })).toBe(0);
+      } finally {
+        await deleting.rollback();
+      }
+    });
+
+    it('makes the delete wait for a site being created, then counts it', async () => {
+      const id = await createClient('Shopping R2');
+      // What creating a site does: lock the client, then insert under it.
+      const creating = await holdTransaction(async (tx) => {
+        await tx.client.updateMany({
+          where: { id, deletedAt: null },
+          data: { updatedAt: new Date() },
+        });
+        await tx.site.create({
+          data: {
+            organizationId: organizationX,
+            clientId: id,
+            name: 'R2 - Piso L1',
+            timezone: 'America/Sao_Paulo',
+          },
+        });
+      });
+      try {
+        const deleting = inFlight(as('opAdminX').delete(`/api/v1/clients/${id}`));
+        await waitUntilBlockedBy(creating.pid);
+        expect(deleting.answered()).toBe(false);
+
+        await creating.commit();
+        const res = await deleting.response;
+        expect(res.status).toBe(409);
+        expect(res.body.message).toBe('Client still has sites; remove them first');
+        const client = await getPrisma().client.findUniqueOrThrow({ where: { id } });
+        expect(client.deletedAt).toBeNull();
+      } finally {
+        await creating.rollback();
+      }
+    });
+
+    it('makes an invitation wait for the delete, then refuses it without an email', async () => {
+      const id = await createClient('Shopping R3');
+      const email = 'race-r3@example.com';
+      const clientEditor = await roleId('client_editor');
+      const deleting = await markDeleted(id);
+      try {
+        const inviting = inFlight(
+          as('opAdminX').post('/api/v1/invitations', { email, roleId: clientEditor, clientId: id }),
+        );
+        await waitUntilBlockedBy(deleting.pid);
+        expect(inviting.answered()).toBe(false);
+
+        await deleting.commit();
+        const res = await inviting.response;
+        expect(res.status).toBe(404);
+        expect(res.body.message).toBe('Client not found');
+        expect(await getPrisma().invitation.count({ where: { clientId: id } })).toBe(0);
+        expect(emailDispatcher.lastFor(email)).toBeUndefined();
+      } finally {
+        await deleting.rollback();
+      }
     });
   });
 });

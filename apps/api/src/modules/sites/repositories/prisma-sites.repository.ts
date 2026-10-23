@@ -4,6 +4,12 @@ import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 import { Site } from '../entities/site.entity';
 import { CreateSiteData, SitesRepository, UpdateSiteData } from './sites.repository.interface';
 
+class SiteInUse extends Error {
+  constructor(readonly robots: number) {
+    super('Site in use');
+  }
+}
+
 @Injectable()
 export class PrismaSitesRepository extends SitesRepository {
   constructor(private scoped: ScopedPrismaService) {
@@ -23,12 +29,19 @@ export class PrismaSitesRepository extends SitesRepository {
     return site ? this.toEntity(site) : null;
   }
 
-  async create(data: CreateSiteData): Promise<Site> {
-    // The tenant-scope extension stamps organizationId from the scope; the Prisma type cannot know that.
-    const site = await this.scoped.client.site.create({
-      data: data as Prisma.SiteUncheckedCreateInput,
+  // Touching the client locks it (lock order in apps/api/CLAUDE.md), so a concurrent delete either
+  // counts this site or the site finds the client gone.
+  async create(data: CreateSiteData): Promise<Site | null> {
+    return this.scoped.client.$transaction(async (tx) => {
+      const { count } = await tx.client.updateMany({
+        where: { id: data.clientId, deletedAt: null },
+        data: { updatedAt: new Date() },
+      });
+      if (count === 0) return null;
+      // The tenant-scope extension stamps organizationId from the scope; the Prisma type cannot know that.
+      const site = await tx.site.create({ data: data as Prisma.SiteUncheckedCreateInput });
+      return this.toEntity(site);
     });
-    return this.toEntity(site);
   }
 
   async update(id: string, data: UpdateSiteData): Promise<Site> {
@@ -39,15 +52,20 @@ export class PrismaSitesRepository extends SitesRepository {
     return this.toEntity(site);
   }
 
-  async softDelete(id: string): Promise<void> {
-    await this.scoped.client.site.update({
-      where: { id, deletedAt: null },
-      data: { deletedAt: new Date() },
-    });
-  }
-
-  async countRobots(id: string): Promise<number> {
-    return this.scoped.client.robot.count({ where: { siteId: id } });
+  // Marking the row deleted locks it before counting, so a robot being moved or approved here
+  // either commits first (and the count sees it) or finds the site gone.
+  async softDeleteUnlessUsed(id: string): Promise<number> {
+    try {
+      return await this.scoped.client.$transaction(async (tx) => {
+        await tx.site.update({ where: { id, deletedAt: null }, data: { deletedAt: new Date() } });
+        const robots = await tx.robot.count({ where: { siteId: id } });
+        if (robots > 0) throw new SiteInUse(robots);
+        return robots;
+      });
+    } catch (error) {
+      if (error instanceof SiteInUse) return error.robots;
+      throw error;
+    }
   }
 
   private toEntity(raw: PrismaSite): Site {

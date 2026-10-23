@@ -51,8 +51,7 @@ describe('ApprovePairingUseCase', () => {
       findById: jest.fn().mockResolvedValue({ id: 's2', clientId: 'c2' }),
       create: jest.fn(),
       update: jest.fn(),
-      softDelete: jest.fn(),
-      countRobots: jest.fn(),
+      softDeleteUnlessUsed: jest.fn(),
     };
     useCase = new ApprovePairingUseCase(codes as unknown as PairingCodesService, pairings, sites);
   });
@@ -98,6 +97,12 @@ describe('ApprovePairingUseCase', () => {
 
     await expect(useCase.execute(input)).rejects.toBeInstanceOf(NotFoundException);
     expect(pairings.approve).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when the site is deleted while the pairing is being approved', async () => {
+    pairings.approve.mockResolvedValue({ status: 'site_gone' });
+
+    await expect(useCase.execute(input)).rejects.toThrow(new NotFoundException('Site not found'));
   });
 
   it('throws 409 without naming the owner when the serial belongs to another organization', async () => {

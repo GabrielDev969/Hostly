@@ -15,13 +15,18 @@ const isUniqueViolation = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 
 class PairingNotPending extends Error {}
+class SiteGone extends Error {}
 class ClaimLost extends Error {}
 
 // RobotPairing has no tenant column, so the scoped client passes it through untouched; it is used
 // here so a transaction can span the pairing and the scoped Robot.
 //
-// Approving, claiming and revoking all lock the robot row first and its pairings second: one lock
-// order, so they never deadlock, and each sees the robot as the others left it.
+// One lock order for every write that spans these rows: Client -> Site -> Robot -> RobotPairing
+// (and Client -> Invitation -> WorkspaceMember). A transaction never locks a row higher in the
+// order after one lower down, so two of them never wait on each other (Postgres would abort one
+// with 40P01). Approving locks the site, then the robot, then its pairings; moving locks the
+// site, then the robot; claiming and revoking lock the robot, then its pairings. The lock is an
+// update of a non-key column (updatedAt, deletedAt), which a foreign key check never waits on.
 @Injectable()
 export class PrismaRobotPairingsRepository extends RobotPairingsRepository {
   constructor(private scoped: ScopedPrismaService) {
@@ -57,11 +62,15 @@ export class PrismaRobotPairingsRepository extends RobotPairingsRepository {
   async approve(data: ApprovePairingData): Promise<ApprovePairingResult> {
     try {
       return await this.scoped.client.$transaction(async (tx) => {
-        // Touching the row locks it, so no token delivery changes it between the check and the write.
-        await tx.robot.updateMany({
-          where: { serial: data.serial },
-          data: { updatedAt: new Date() },
+        const now = new Date();
+        // The site first, so a concurrent delete either counts this robot or it finds the site gone.
+        const site = await tx.site.updateMany({
+          where: { id: data.siteId, deletedAt: null },
+          data: { updatedAt: now },
         });
+        if (site.count === 0) throw new SiteGone();
+        // Touching the row locks it, so no token delivery changes it between the check and the write.
+        await tx.robot.updateMany({ where: { serial: data.serial }, data: { updatedAt: now } });
         const existing = await tx.robot.findFirst({ where: { serial: data.serial } });
         if (existing) data.authorizeExisting(toRobot(existing));
         const robot = existing
@@ -87,6 +96,7 @@ export class PrismaRobotPairingsRepository extends RobotPairingsRepository {
       });
     } catch (error) {
       if (error instanceof PairingNotPending) return { status: 'not_pending' };
+      if (error instanceof SiteGone) return { status: 'site_gone' };
       if (isUniqueViolation(error)) return this.serialConflict(data.serial);
       throw error;
     }

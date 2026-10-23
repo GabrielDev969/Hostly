@@ -22,7 +22,10 @@ export interface ApprovePairingData {
 }
 
 export type ApprovePairingResult =
-  { status: 'approved'; robot: Robot } | { status: 'serial_taken' } | { status: 'not_pending' };
+  | { status: 'approved'; robot: Robot }
+  | { status: 'serial_taken' }
+  | { status: 'not_pending' }
+  | { status: 'site_gone' };
 
 export interface ClaimPairingData {
   pairingId: string;
@@ -37,7 +40,8 @@ export abstract class RobotPairingsRepository {
   abstract create(data: CreatePairingData): Promise<RobotPairing | null>;
   abstract findPendingByCode(code: string, now: Date): Promise<RobotPairing | null>;
   abstract findByPollKeyHash(pollKeyHash: string): Promise<RobotPairing | null>;
-  // Creates or updates the robot in the current scope and approves the pairing, atomically.
+  // Creates or updates the robot in the current scope and approves the pairing, atomically; site_gone
+  // when the site was deleted, checked under its row lock.
   abstract approve(data: ApprovePairingData): Promise<ApprovePairingResult>;
   // Deletes the approved pairing and stores the new token hash; false when another poll won.
   // Touches Robot across tenants: call it inside TenantContext.runAsSystem.

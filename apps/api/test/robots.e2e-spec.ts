@@ -19,6 +19,7 @@ import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
 import { addScopedMember, provisionOperator } from './helpers/operator';
 import { resetPairingLimits } from './helpers/pairing-limits';
+import { holdTransaction, inFlight, waitUntilBlockedBy } from './helpers/held-transaction';
 import { pairRobot, type DeviceTransport } from '../scripts/fake-robot/pairing';
 import { RobotAuthService } from '../src/modules/robots/services/robot-auth.service';
 import { RobotPairingsRepository } from '../src/modules/robots/repositories/robot-pairings.repository.interface';
@@ -694,6 +695,111 @@ describe('Robots and pairing (e2e)', () => {
 
       const filtered = await as('opStaffX').get(`/api/v1/robots?siteId=${siteB}`).expect(200);
       expect((filtered.body as RobotBody[]).map((r) => r.id)).toContain(paired.robotId);
+    });
+  });
+
+  // A transaction held open by the test stands in for the other request, so each run takes the
+  // same interleaving: the request is proven to wait on that transaction's lock, then answers.
+  describe('racing a site delete', () => {
+    const markDeleted = (id: string) =>
+      holdTransaction((tx) => tx.site.update({ where: { id }, data: { deletedAt: new Date() } }));
+    const move = (robotId: string, siteId: string) =>
+      as('opAdminX').post(`/api/v1/robots/${robotId}/move`, { siteId });
+
+    it('makes a move wait for the delete, then refuses it and keeps the robot where it was', async () => {
+      const paired = await pair('LB-E2E-0901', siteA);
+      const site = await createSite(clientA, 'A - race move');
+      const deleting = await markDeleted(site);
+      try {
+        const moving = inFlight(move(paired.robotId, site));
+        await waitUntilBlockedBy(deleting.pid);
+        expect(moving.answered()).toBe(false);
+
+        await deleting.commit();
+        const res = await moving.response;
+        expect(res.status).toBe(404);
+        expect(res.body.message).toBe('Site not found');
+        const robot = await getPrisma().robot.findUniqueOrThrow({ where: { id: paired.robotId } });
+        expect(robot).toMatchObject({ siteId: siteA, clientId: clientA });
+      } finally {
+        await deleting.rollback();
+      }
+    });
+
+    it('makes an approval wait for the delete, then refuses it and creates no robot', async () => {
+      const started = await start('LB-E2E-0902');
+      const site = await createSite(clientA, 'A - race approve');
+      const deleting = await markDeleted(site);
+      try {
+        const approving = inFlight(approve(started.code, site));
+        await waitUntilBlockedBy(deleting.pid);
+        expect(approving.answered()).toBe(false);
+
+        await deleting.commit();
+        const res = await approving.response;
+        expect(res.status).toBe(404);
+        expect(res.body.message).toBe('Site not found');
+        expect(await getPrisma().robot.count({ where: { serial: 'LB-E2E-0902' } })).toBe(0);
+        const pairing = await getPrisma().robotPairing.findUniqueOrThrow({
+          where: { code: started.code },
+        });
+        expect(pairing).toMatchObject({ status: 'pending', robotId: null });
+      } finally {
+        await deleting.rollback();
+      }
+    });
+
+    it('makes the delete wait for a robot being moved there, then counts it', async () => {
+      const paired = await pair('LB-E2E-0903', siteA);
+      const site = await createSite(clientA, 'A - race delete');
+      // Holding the robot stalls the move after it has locked the site.
+      const holdingRobot = await holdTransaction((tx) =>
+        tx.robot.update({ where: { id: paired.robotId }, data: { updatedAt: new Date() } }),
+      );
+      try {
+        const moving = inFlight(move(paired.robotId, site));
+        const movePid = await waitUntilBlockedBy(holdingRobot.pid);
+        const deleting = inFlight(as('opAdminX').delete(`/api/v1/sites/${site}`));
+        await waitUntilBlockedBy(movePid);
+        expect([moving.answered(), deleting.answered()]).toEqual([false, false]);
+
+        await holdingRobot.commit();
+        expect((await moving.response).status).toBe(200);
+        const res = await deleting.response;
+        expect(res.status).toBe(409);
+        expect(res.body.message).toBe('Site still has robots; move them first');
+        const kept = await getPrisma().site.findUniqueOrThrow({ where: { id: site } });
+        expect(kept.deletedAt).toBeNull();
+      } finally {
+        await holdingRobot.rollback();
+      }
+    });
+
+    // Both lock the site before the robot; with opposite orders, Postgres would abort one (500).
+    it('approves and moves the same robot to the same site at once, round after round', async () => {
+      const serial = 'LB-E2E-0904';
+      const paired = await pair(serial, siteA);
+      const targets = [
+        await createSite(clientA, 'A - race C'),
+        await createSite(clientA, 'A - race D'),
+      ];
+
+      for (let round = 0; round < 20; round++) {
+        await resetPairingLimits();
+        const target = targets[round % 2]!;
+        const { code } = await start(serial);
+        const [approved, moved] = await Promise.all([
+          approve(code, target),
+          move(paired.robotId, target),
+        ]);
+        expect({ round, approve: approved.status, move: moved.status }).toEqual({
+          round,
+          approve: 201,
+          move: 200,
+        });
+      }
+      const robot = await getPrisma().robot.findUniqueOrThrow({ where: { id: paired.robotId } });
+      expect(robot.siteId).toBe(targets[1]);
     });
   });
 });

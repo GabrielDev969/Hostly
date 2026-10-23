@@ -16,8 +16,9 @@ export interface UpdateSiteData {
 export abstract class SitesRepository {
   abstract findMany(filter: { clientId?: string }): Promise<Site[]>;
   abstract findById(id: string): Promise<Site | null>;
-  abstract create(data: CreateSiteData): Promise<Site>;
+  // Null when the client is gone, checked under the client's row lock.
+  abstract create(data: CreateSiteData): Promise<Site | null>;
   abstract update(id: string, data: UpdateSiteData): Promise<Site>;
-  abstract softDelete(id: string): Promise<void>;
-  abstract countRobots(id: string): Promise<number>;
+  // Deletes only when no robot points to the site, counted under the row lock; returns the count.
+  abstract softDeleteUnlessUsed(id: string): Promise<number>;
 }

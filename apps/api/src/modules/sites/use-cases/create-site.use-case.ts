@@ -27,6 +27,7 @@ export class CreateSiteUseCase {
       timezone: input.timezone,
       address: input.address ?? null,
     });
+    if (!site) throw new NotFoundException('Client not found');
     return toSiteDto(site);
   }
 }

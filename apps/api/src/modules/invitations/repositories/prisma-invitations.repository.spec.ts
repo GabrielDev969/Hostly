@@ -11,7 +11,11 @@ type InvitationClient = {
   delete: jest.Mock;
 };
 
-type PrismaMock = { invitation: InvitationClient };
+type PrismaMock = {
+  invitation: InvitationClient;
+  client: { updateMany: jest.Mock };
+  $transaction: jest.Mock;
+};
 
 describe('PrismaInvitationsRepository', () => {
   let prisma: PrismaMock;
@@ -40,6 +44,8 @@ describe('PrismaInvitationsRepository', () => {
         update: jest.fn(),
         delete: jest.fn(),
       },
+      client: { updateMany: jest.fn() },
+      $transaction: jest.fn((work: (tx: PrismaMock) => Promise<unknown>) => work(prisma)),
     };
     // One mock serves both clients: the scope filter itself is covered by the rewriter specs.
     repo = new PrismaInvitationsRepository(
@@ -67,7 +73,38 @@ describe('PrismaInvitationsRepository', () => {
       expect(prisma.invitation.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ email: 'jane@example.com' }),
       });
-      expect(result.id).toBe('inv1');
+      expect(result?.id).toBe('inv1');
+      expect(prisma.client.updateMany).not.toHaveBeenCalled();
+    });
+
+    const toClient = {
+      email: 'jane@example.com',
+      workspaceId: 'w1',
+      roleId: 'r1',
+      invitedById: 'u1',
+      clientId: 'c1',
+      tokenHash: 'hash',
+      expiresAt: baseRow.expiresAt,
+    };
+
+    it('locks a live client before inviting to it', async () => {
+      prisma.client.updateMany.mockResolvedValue({ count: 1 });
+      prisma.invitation.create.mockResolvedValue({ ...baseRow, clientId: 'c1' });
+
+      const result = await repo.create(toClient);
+
+      expect(prisma.client.updateMany).toHaveBeenCalledWith({
+        where: { id: 'c1', deletedAt: null },
+        data: { updatedAt: expect.any(Date) },
+      });
+      expect(result?.clientId).toBe('c1');
+    });
+
+    it('returns null and creates nothing when the client is gone', async () => {
+      prisma.client.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(repo.create(toClient)).resolves.toBeNull();
+      expect(prisma.invitation.create).not.toHaveBeenCalled();
     });
   });
 

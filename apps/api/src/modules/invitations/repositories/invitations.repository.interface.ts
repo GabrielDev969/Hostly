@@ -11,7 +11,8 @@ export interface CreateInvitationData {
 }
 
 export abstract class InvitationsRepository {
-  abstract create(data: CreateInvitationData): Promise<Invitation>;
+  // Null when the invitation's client is gone, checked under the client's row lock.
+  abstract create(data: CreateInvitationData): Promise<Invitation | null>;
   abstract findById(id: string): Promise<Invitation | null>;
   abstract findByTokenHash(tokenHash: string): Promise<Invitation | null>;
   abstract findManyByWorkspace(workspaceId: string): Promise<Invitation[]>;
