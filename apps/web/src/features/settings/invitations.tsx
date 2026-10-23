@@ -19,10 +19,13 @@ const EMAIL = /^[^\s@]+@[^\s@]+$/;
 
 export function InviteDialog({
   roles,
+  clientId: fixedClientId,
   onClose,
   onDone,
 }: {
   roles: Role[];
+  // Invites into this client only (the Clients page): the client is fixed and only client roles are offered.
+  clientId?: string;
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
@@ -30,12 +33,16 @@ export function InviteDialog({
   const queryClient = useQueryClient();
   // Clients only: the internal client holds the operator's own robots, which operator members already see.
   const clients = useClientFilter().clients.filter((client) => !client.isInternal);
-  const options = [...GRANTABLE_ROLES.operator, ...GRANTABLE_ROLES.client].flatMap((name) =>
+  const fixed = fixedClientId !== undefined;
+  const grantable = fixed
+    ? GRANTABLE_ROLES.client
+    : [...GRANTABLE_ROLES.operator, ...GRANTABLE_ROLES.client];
+  const options = grantable.flatMap((name) =>
     roles.filter((role) => role.isSystem && role.name === name),
   );
   const [email, setEmail] = useState('');
   const [roleId, setRoleId] = useState('');
-  const [clientId, setClientId] = useState('');
+  const [clientId, setClientId] = useState(fixedClientId ?? '');
   const [invalid, setInvalid] = useState(false);
   const ids = { form: useId(), email: useId(), role: useId(), client: useId() };
 
@@ -119,7 +126,20 @@ export function InviteDialog({
             </select>
             {invalid && !role && <p className={styles.fieldError}>Escolha o papel.</p>}
           </div>
-          {needsClient && (
+          {fixed && (
+            <div className={styles.field}>
+              <label htmlFor={ids.client} className={styles.label}>
+                Cliente
+              </label>
+              <input
+                id={ids.client}
+                className={styles.input}
+                value={clients.find((client) => client.id === fixedClientId)?.name ?? EMPTY}
+                readOnly
+              />
+            </div>
+          )}
+          {needsClient && !fixed && (
             <div className={styles.field}>
               <label htmlFor={ids.client} className={styles.label}>
                 Cliente

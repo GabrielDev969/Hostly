@@ -1,0 +1,328 @@
+.pageHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.list,
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  min-width: 0;
+}
+
+.panel {
+  padding: var(--card-padding);
+}
+
+.list {
+  padding: 8px;
+}
+
+.list ul,
+.sites,
+.robots,
+.people {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.listItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius-item);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.listItem:hover {
+  background: var(--color-bg);
+}
+
+.listItem[aria-current='page'] {
+  background: var(--color-bg);
+  box-shadow: inset 3px 0 0 var(--color-primary);
+}
+
+.listName {
+  font-weight: 600;
+}
+
+.listSummary {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.detailSide,
+.detail {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+}
+
+/* Beside the list the way back is already there; it only shows on a phone. */
+.back {
+  display: none;
+  margin: 0;
+}
+
+.panelHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.clientName {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.stat {
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-item);
+}
+
+.stat dt {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.stat dd {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.soon {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.sites {
+  display: grid;
+  gap: 12px;
+}
+
+.site {
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-item);
+}
+
+.siteHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.siteName {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.siteMeta {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.robots,
+.people {
+  display: grid;
+  gap: 8px;
+}
+
+.robot,
+.person {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.personName {
+  font-weight: 500;
+}
+
+.panel p {
+  margin: 0;
+}
+
+.panel p + p {
+  margin-top: 4px;
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.active {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.onboarding {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.paused,
+.internal {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+}
+
+.notice {
+  margin: 0 0 16px;
+  color: var(--color-success);
+}
+
+/* Empty, it stays in the page (so screen readers hear what appears) but takes no row of the grid. */
+.notice:empty {
+  position: absolute;
+  margin: 0;
+}
+
+.detail .notice {
+  margin: 0;
+}
+
+.dialogForm {
+  display: grid;
+  gap: 16px;
+}
+
+.dialogForm p {
+  margin: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.input {
+  height: var(--button-height);
+  padding: 0 12px;
+  border: 1px solid var(--color-text-muted);
+  border-radius: var(--radius-item);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.help,
+.fieldError {
+  font-size: 13px;
+}
+
+.help {
+  color: var(--color-text-muted);
+}
+
+.fieldError {
+  color: var(--color-danger);
+}
+
+.error {
+  padding: 8px 12px;
+  border-radius: var(--radius-item);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+@media (max-width: 800px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .layout[data-selected] .list,
+  .layout:not([data-selected]) .detailSide {
+    display: none;
+  }
+
+  .back {
+    display: block;
+  }
+}

@@ -1,6 +1,6 @@
 import createClient from 'openapi-fetch';
 import type { SessionClient } from '../session/session-client';
-import { ApiError } from './errors';
+import { ApiError, detailsOf } from './errors';
 import type { components, paths } from './schema';
 
 export type ApiClient = ReturnType<typeof createApiClient>;
@@ -36,5 +36,5 @@ function toError(error: unknown, response: Response): ApiError {
     typeof error.message === 'string'
       ? error.message
       : response.statusText;
-  return new ApiError(response.status, message);
+  return new ApiError(response.status, message, detailsOf(error));
 }

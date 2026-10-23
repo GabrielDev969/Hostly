@@ -24,7 +24,7 @@ export const robotKeys = {
   sites: (workspaceId: string) => ['sites', workspaceId] as const,
 };
 
-export function useRobots(clientId: string | null) {
+export function useRobots(clientId: string | null, enabled = true) {
   const { workspace, api } = usePanelSession();
   return useQuery({
     queryKey: robotKeys.list(workspace.id, clientId),
@@ -37,6 +37,7 @@ export function useRobots(clientId: string | null) {
           },
         }),
       ),
+    enabled,
   });
 }
 

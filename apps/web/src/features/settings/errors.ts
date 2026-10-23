@@ -15,7 +15,7 @@ export function permissionKeys(message: string): string[] {
 }
 
 // Shows what the API refused without hiding it: the missing keys, or its own message when it names none.
-function describeForbidden(error: ApiError, reasons: Record<string, string> = {}): string {
+export function describeForbidden(error: ApiError, reasons: Record<string, string> = {}): string {
   const keys = permissionKeys(error.message);
   if (keys.length === 0) return `A API recusou esta ação: ${error.message}`;
   const listed = keys.map((key) => (reasons[key] ? `${key} (${reasons[key]})` : key));
