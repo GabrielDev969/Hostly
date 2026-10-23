@@ -22,6 +22,7 @@ import {
 import { CurrentUser } from '@shared/decorators/current-user.decorator';
 import { CurrentWorkspace } from '@shared/decorators/current-workspace.decorator';
 import { CurrentPermissions } from '@shared/decorators/current-permissions.decorator';
+import { CurrentScope } from '@shared/decorators/current-scope.decorator';
 import { RequirePermissions } from '@shared/decorators/require-permissions.decorator';
 import { Audit } from '@shared/decorators/audit.decorator';
 import { Idempotent } from '@shared/idempotency/idempotent.decorator';
@@ -35,8 +36,10 @@ import {
 } from '@shared/swagger/api-errors.decorator';
 import type { AuthenticatedUser } from '@shared/types/authenticated-user.type';
 import type { WorkspaceContext } from '@shared/types/workspace-context.type';
+import type { TenantScope } from '@shared/tenancy/tenant-scope';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { WorkspaceResponseDto } from './dto/workspace-response.dto';
+import { WorkspaceMeResponseDto, toWorkspaceMeDto } from './dto/workspace-me-response.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { TransferOwnershipDto } from './dto/transfer-ownership.dto';
 import { WorkspaceMemberResponseDto, toMemberDto } from './dto/member-response.dto';
@@ -84,6 +87,25 @@ export class WorkspacesController {
   @ApiServerError()
   async findOne(@CurrentWorkspace() workspace: WorkspaceContext): Promise<WorkspaceResponseDto> {
     return this.getWorkspace.execute(workspace.id);
+  }
+
+  // No permission required: it describes the caller's own membership, which the panel needs to render.
+  @Get(':workspaceId/me')
+  @UseGuards(WorkspaceGuard)
+  @ApiOperation({
+    summary: "Caller's membership in the workspace: role, scope and effective permissions",
+  })
+  @ApiParam({ name: 'workspaceId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: WorkspaceMeResponseDto })
+  @ApiAuthErrors()
+  @ApiNotFoundError('Workspace')
+  @ApiServerError()
+  me(
+    @CurrentWorkspace() workspace: WorkspaceContext,
+    @CurrentScope() scope: TenantScope,
+    @CurrentPermissions() permissions: string[],
+  ): WorkspaceMeResponseDto {
+    return toWorkspaceMeDto(workspace, scope, permissions);
   }
 
   @Patch(':workspaceId')
