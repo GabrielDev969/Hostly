@@ -186,6 +186,17 @@ Regras:
 - Mude o mínimo; prove antes de afirmar; pare e pergunte quando a decisão for do dono.
 - Uma fase fecha pelo critério de pronto no robô de verdade, não pela lista de tarefas (spec → "Fases de implementação").
 
+**Agentes em paralelo** (duas issues ao mesmo tempo, cada uma com o seu agente):
+
+- Cada agente trabalha num `git worktree` próprio, nunca na mesma pasta de outro.
+- O Postgres local é um só. Num worktree com migrações diferentes das que o banco já tem, não rode `db:migrate` nem
+  `prisma migrate dev`, e recuse qualquer reset: use outro database no `DATABASE_URL` só daquele worktree.
+- Pare só o processo que você mesmo iniciou, pelo PID. Nunca mate por padrão amplo (`pkill -f`, `killall`), porque
+  pega o processo do outro agente.
+- Só um agente sobe a API na porta `API_PORT` por vez.
+- Antes de abrir o PR, faça rebase na `main`. Conflito no `pnpm-lock.yaml` se resolve rodando `pnpm install`, nunca à
+  mão, e arquivo gerado (JSON Schema e afins) se resolve gerando de novo.
+
 ## Fluxo do quadro
 
 Quadro "Hostly v1" (GitHub Projects). Status:
