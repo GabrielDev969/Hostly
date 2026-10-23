@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect } from 'react';
-import { ErrorState, LoadingState } from '@/components/states';
+import { describeLoadError, ErrorState, LoadingState } from '@/components/states';
 import { LoginForm } from '@/features/auth/login-form';
 import { safeNextPath } from '@/features/auth/safe-next';
 import loginStyles from '@/features/auth/login.module.css';
@@ -24,7 +24,7 @@ function LoginScreen() {
     return (
       <ErrorState
         fullscreen
-        description="Não foi possível falar com o servidor. Confira sua conexão e tente de novo."
+        description={describeLoadError(state.error)}
         onRetry={() => void retry()}
       />
     );

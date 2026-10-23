@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import PanelLayout from '@/app/(panel)/layout';
 import PanelHome from '@/app/(panel)/page';
 import { ComingSoon } from '@/components/states';
@@ -143,6 +143,18 @@ describe('client selector', () => {
 });
 
 describe('session in the panel', () => {
+  it('says which setting is missing when the API URL is not configured', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', '');
+    try {
+      renderPanel('operator_admin');
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'O painel está sem a configuração NEXT_PUBLIC_API_URL',
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('logs out: calls the API, clears the session and goes to the login', async () => {
     const { calls, queryClient } = renderPanel('operator_admin');
     await menuLabels();

@@ -71,7 +71,7 @@ Pré-requisito: `nvm use` (Node 24.22.1, fixado no `.nvmrc`). O pnpm 12.15.0 vem
 | `pnpm --filter @hostly/api db:migrate` | `prisma migrate dev`: cria e aplica migração em desenvolvimento |
 | `pnpm --filter @hostly/api db:deploy` | `prisma migrate deploy`: aplica as migrações pendentes |
 | `pnpm --filter @hostly/api openapi` | Regenera `apps/api/openapi.json` (o diff entra no commit); o `pnpm test` da API falha se ele estiver velho |
-| `pnpm --filter @hostly/web dev` | Sobe só o painel em watch (porta 3000); a API precisa estar de pé em `NEXT_PUBLIC_API_URL` |
+| `pnpm --filter @hostly/web dev` | Sobe só o painel em watch (porta 3000, com webpack: o Turbopack do `next dev` 16.4.2 quebra no `next/font/google` deste repo; o `next build` usa Turbopack e passa); a API precisa estar de pé em `NEXT_PUBLIC_API_URL` |
 | `pnpm --filter @hostly/web generate` | Gera `apps/web/src/lib/api/schema.d.ts` a partir do `openapi.json` (o Turbo roda antes de dev, build, lint, typecheck e test; o git ignora) |
 | `pnpm --filter @hostly/web test` | Testes do painel (Vitest + Testing Library + MSW, sem API de verdade) |
 | `pnpm --filter @hostly/api fake-robot --serial <serial>` | Robô simulado: pareia com a API local (mostra o código; aprove no painel ou no Swagger), conecta no WebSocket, manda `hello` e telemetria e responde ping. `--telemetry-interval <s>` (padrão 10), `--close-after <s>` (fecha limpo) e `--vanish-after <s>` (para de responder sem fechar). Precisa do contracts compilado (`pnpm build`) e não grava o token em disco |

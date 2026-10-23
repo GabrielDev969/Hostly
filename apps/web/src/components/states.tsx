@@ -1,5 +1,14 @@
 import type { ReactNode } from 'react';
+import { MissingConfigError } from '@/lib/env';
 import { Button, Card, PageHeader, uiStyles as styles } from './ui';
+
+// What a screen that could not reach the API tells the user.
+export function describeLoadError(error: unknown): string {
+  if (error instanceof MissingConfigError) {
+    return `O painel está sem a configuração ${error.variable}. Fale com quem administra o painel.`;
+  }
+  return 'Não foi possível falar com o servidor. Confira sua conexão e tente de novo.';
+}
 
 export function LoadingState({
   label = 'Carregando…',

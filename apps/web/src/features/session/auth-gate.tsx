@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
-import { EmptyState, ErrorState, LoadingState } from '@/components/states';
+import { describeLoadError, EmptyState, ErrorState, LoadingState } from '@/components/states';
 import { Button } from '@/components/ui';
 import { useSession } from '@/lib/session/session-provider';
 
@@ -42,7 +42,7 @@ export function AuthGate({
     return (
       <ErrorState
         fullscreen
-        description="Não foi possível falar com o servidor. Confira sua conexão e tente de novo."
+        description={describeLoadError(state.error)}
         onRetry={() => void retry()}
       />
     );

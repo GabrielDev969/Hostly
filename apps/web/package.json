@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "generate": "openapi-typescript ../api/openapi.json -o src/lib/api/schema.d.ts",
-    "dev": "next dev --port 3000",
+    "dev": "next dev --webpack --port 3000",
     "build": "next build",
     "start": "next start --port 3000",
     "lint": "eslint .",
