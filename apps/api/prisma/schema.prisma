@@ -96,6 +96,7 @@ model Organization {
   clients    Client[]
   sites      Site[]
   robots     Robot[]
+  telemetry  TelemetrySnapshot[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -192,10 +193,11 @@ model Client {
   // enforced by a partial unique index and a CHECK in the migration SQL.
   isInternal     Boolean      @default(false)
 
-  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   sites        Site[]
   members      WorkspaceMember[]
   invitations  Invitation[]
+  telemetry    TelemetrySnapshot[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -241,6 +243,17 @@ enum RobotStatus {
   revoked
 }
 
+// Same values as robotModeSchema in @hostly/contracts; robot-mode.spec.ts fails if they drift.
+enum RobotMode {
+  idle
+  promotion
+  cruise
+  guide
+  reception
+  base
+  suspended
+}
+
 model Robot {
   id              String      @id @default(uuid())
   organizationId  String
@@ -256,10 +269,30 @@ model Robot {
   status          RobotStatus @default(pending)
   // sha256 of the device token. Set only while active: enforced by a CHECK in the migration SQL.
   deviceTokenHash String?     @unique
+  // Reported in the hello; null before the first manifest.
+  manifestVersion String?
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  site         Site           @relation(fields: [siteId, clientId, organizationId], references: [id, clientId, organizationId], onDelete: Restrict)
+  // Presence: online from the hello until the socket closes or the stale sweep finds lastSeenAt too old.
+  online     Boolean   @default(false)
+  lastSeenAt DateTime?
+
+  // Last telemetry, kept for good (the history in TelemetrySnapshot is pruned). Battery 0-100 and the pose
+  // all-or-nothing: enforced by CHECKs in the migration SQL.
+  telemetryAt       DateTime?
+  battery           Int?
+  charging          Boolean?
+  poseX             Float?
+  poseY             Float?
+  poseTheta         Float?
+  mode              RobotMode?
+  emergency         Boolean?
+  // No foreign key yet: media assets arrive with the advertising pipeline.
+  nowPlayingAssetId String?
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  site         Site                @relation(fields: [siteId, clientId, organizationId], references: [id, clientId, organizationId], onDelete: Restrict)
   pairings     RobotPairing[]
+  telemetry    TelemetrySnapshot[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -267,6 +300,33 @@ model Robot {
   @@index([organizationId])
   @@index([clientId])
   @@index([siteId])
+}
+
+// Short telemetry history. The row keeps the client the robot belonged to when it arrived: moving the robot
+// leaves its history behind. Pruned after TELEMETRY_RETENTION_DAYS by the maintenance job.
+model TelemetrySnapshot {
+  id             String    @id @default(uuid())
+  organizationId String
+  clientId       String
+  robotId        String
+  // When the cloud received it: the robot's clock may be off.
+  ts             DateTime  @default(now())
+  battery        Int?
+  charging       Boolean?
+  poseX          Float?
+  poseY          Float?
+  poseTheta      Float?
+  mode           RobotMode
+  emergency      Boolean
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  client       Client       @relation(fields: [clientId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  robot        Robot        @relation(fields: [robotId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([clientId])
+  @@index([robotId, ts])
+  @@index([ts])
 }
 
 enum RobotPairingStatus {

@@ -4,12 +4,14 @@ import { CryptoUtil } from '@shared/utils/crypto.util';
 import { TenantContext } from '@shared/tenancy/tenant-context';
 import { RobotPairingsRepository } from '../repositories/robot-pairings.repository.interface';
 import { PairingRateLimiter } from '../services/pairing-rate-limiter.service';
+import { RobotTokenEvents } from '../services/robot-token-events.service';
 
 @Injectable()
 export class PollPairingUseCase {
   constructor(
     private pairings: RobotPairingsRepository,
     private limiter: PairingRateLimiter,
+    private tokenEvents: RobotTokenEvents,
   ) {}
 
   // Unknown, expired and already delivered pairings all answer "expired".
@@ -26,16 +28,18 @@ export class PollPairingUseCase {
 
     // Generated on delivery, not on approval, so the raw token never reaches the database.
     const deviceToken = CryptoUtil.generateToken(32);
+    const deviceTokenHash = CryptoUtil.hashToken(deviceToken);
     const claimed = await TenantContext.runAsSystem(() =>
       this.pairings.claimApproved({
         pairingId: pairing.id,
         robotId: pairing.robotId,
-        deviceTokenHash: CryptoUtil.hashToken(deviceToken),
+        deviceTokenHash,
         now,
       }),
     );
-    return claimed
-      ? { status: 'approved', robotId: pairing.robotId, deviceToken }
-      : { status: 'expired' };
+    if (!claimed) return { status: 'expired' };
+    // The new token replaces any older one: a socket still open with it closes before the token is handed out.
+    this.tokenEvents.emit({ robotId: pairing.robotId, activeTokenHash: deviceTokenHash });
+    return { status: 'approved', robotId: pairing.robotId, deviceToken };
   }
 }

@@ -5,6 +5,7 @@ import { TenantContext } from '@shared/tenancy/tenant-context';
 import { PollPairingUseCase } from './poll-pairing.use-case';
 import { RobotPairingsRepository } from '../repositories/robot-pairings.repository.interface';
 import { PairingRateLimiter } from '../services/pairing-rate-limiter.service';
+import { RobotTokenEvents } from '../services/robot-token-events.service';
 import { RobotPairing } from '../entities/robot-pairing.entity';
 
 const PAIRING_ID = '0b6f0c39-6b8e-4f0e-9f57-0f6a3c1f4a11';
@@ -13,6 +14,7 @@ const ROBOT_ID = '6c1d7f8e-2a3b-4c5d-8e9f-0a1b2c3d4e5f';
 describe('PollPairingUseCase', () => {
   let pairings: jest.Mocked<RobotPairingsRepository>;
   let limiter: jest.Mocked<Pick<PairingRateLimiter, 'hitPoll'>>;
+  let tokenEvents: RobotTokenEvents;
   let useCase: PollPairingUseCase;
 
   const pairing = (overrides: Partial<RobotPairing> = {}): RobotPairing =>
@@ -37,7 +39,13 @@ describe('PollPairingUseCase', () => {
       claimApproved: jest.fn().mockResolvedValue(true),
     };
     limiter = { hitPoll: jest.fn() };
-    useCase = new PollPairingUseCase(pairings, limiter as unknown as PairingRateLimiter);
+    tokenEvents = new RobotTokenEvents();
+    jest.spyOn(tokenEvents, 'emit');
+    useCase = new PollPairingUseCase(
+      pairings,
+      limiter as unknown as PairingRateLimiter,
+      tokenEvents,
+    );
   });
 
   it('looks the pairing up and rate limits it by the hash of its id', async () => {
@@ -87,6 +95,10 @@ describe('PollPairingUseCase', () => {
       }),
     );
     expect(system).toBe(true);
+    expect(tokenEvents.emit).toHaveBeenCalledWith({
+      robotId: ROBOT_ID,
+      activeTokenHash: CryptoUtil.hashToken(result.deviceToken),
+    });
   });
 
   it('answers expired when another poll claimed the token first', async () => {
@@ -96,6 +108,7 @@ describe('PollPairingUseCase', () => {
     pairings.claimApproved.mockResolvedValue(false);
 
     await expect(useCase.execute(PAIRING_ID)).resolves.toEqual({ status: 'expired' });
+    expect(tokenEvents.emit).not.toHaveBeenCalled();
   });
 
   it('refuses polls faster than the limit before touching the database', async () => {

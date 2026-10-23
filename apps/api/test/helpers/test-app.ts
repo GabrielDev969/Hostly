@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
+import { WsAdapter } from '@nestjs/platform-ws';
 import { AppModule } from '../../src/app.module';
 import { EmailDispatcher } from '../../src/shared/mailer/email-dispatcher.service';
 import { TestEmailDispatcher } from './test-email-dispatcher';
@@ -22,6 +23,7 @@ export async function createTestApp(): Promise<TestAppHandle> {
 
   const app = moduleRef.createNestApplication();
 
+  app.useWebSocketAdapter(new WsAdapter(app));
   app.use(cookieParser());
   app.useGlobalPipes(
     new ValidationPipe({

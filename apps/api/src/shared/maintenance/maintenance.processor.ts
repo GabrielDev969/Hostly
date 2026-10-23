@@ -6,11 +6,13 @@ import { AnonymizeExpiredUsersUseCase } from '@modules/users/use-cases/anonymize
 import { CleanupExpiredSessionsUseCase } from '@modules/sessions/use-cases/cleanup-expired-sessions.use-case';
 import { CleanupExpiredTokensUseCase } from '@modules/auth/use-cases/cleanup-expired-tokens.use-case';
 import { CleanupOldAuditLogsUseCase } from '@modules/audit/use-cases/cleanup-old-audit-logs.use-case';
+import { CleanupOldTelemetryUseCase } from '@modules/robot-link/use-cases/cleanup-old-telemetry.use-case';
 import {
   ANONYMIZE_EXPIRED_USERS_JOB,
   CLEANUP_EXPIRED_SESSIONS_JOB,
   CLEANUP_EXPIRED_TOKENS_JOB,
   CLEANUP_OLD_AUDIT_LOGS_JOB,
+  CLEANUP_OLD_TELEMETRY_JOB,
 } from './maintenance.jobs';
 
 @Processor(QUEUE.maintenance)
@@ -22,6 +24,7 @@ export class MaintenanceProcessor extends WorkerHost {
     private readonly cleanupSessions: CleanupExpiredSessionsUseCase,
     private readonly cleanupTokens: CleanupExpiredTokensUseCase,
     private readonly cleanupAudit: CleanupOldAuditLogsUseCase,
+    private readonly cleanupTelemetry: CleanupOldTelemetryUseCase,
   ) {
     super();
   }
@@ -39,6 +42,9 @@ export class MaintenanceProcessor extends WorkerHost {
         return;
       case CLEANUP_OLD_AUDIT_LOGS_JOB:
         await this.cleanupAudit.execute();
+        return;
+      case CLEANUP_OLD_TELEMETRY_JOB:
+        await this.cleanupTelemetry.execute();
         return;
       default:
         this.logger.warn({ msg: 'Unknown maintenance job', name: job.name });

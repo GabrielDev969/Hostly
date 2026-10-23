@@ -31,6 +31,12 @@ if (!process.env.REDIS_HOST) process.env.REDIS_HOST = 'localhost';
 if (!process.env.REDIS_PORT) process.env.REDIS_PORT = '6379';
 process.env.THROTTLE_TTL = '60';
 process.env.THROTTLE_LIMIT = '100';
+// Short enough for the presence e2e, long enough that a busy CI does not miss a pong.
+process.env.ROBOT_SOCKET_PING_INTERVAL_MS = '1000';
+process.env.ROBOT_SOCKET_MISSED_PINGS = '3';
+process.env.ROBOT_SOCKET_HELLO_TIMEOUT_MS = '2000';
+process.env.LIVE_TICKET_TTL_MS = '2000';
+process.env.LIVE_SOCKET_MAX_AGE_MS = '8000';
 
 if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL =

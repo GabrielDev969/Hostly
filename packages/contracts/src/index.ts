@@ -1,4 +1,6 @@
 export * from './common.ts';
+export * from './live/events.ts';
+export * from './live/socket.ts';
 export * from './map-points.ts';
 export * from './pairing.ts';
 export * from './registry.ts';
@@ -7,4 +9,5 @@ export * from './ws/envelope.ts';
 export * from './ws/hello.ts';
 export * from './ws/messages.ts';
 export * from './ws/ping-pong.ts';
+export * from './ws/socket.ts';
 export * from './ws/telemetry.ts';

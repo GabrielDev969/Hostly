@@ -70,7 +70,7 @@ Pré-requisito: `nvm use` (Node 24.22.1, fixado no `.nvmrc`). O pnpm 12.15.0 vem
 | `pnpm --filter @hostly/api dev` | Sobe só a API em watch (porta `API_PORT`; Swagger em `/docs`) |
 | `pnpm --filter @hostly/api db:migrate` | `prisma migrate dev`: cria e aplica migração em desenvolvimento |
 | `pnpm --filter @hostly/api db:deploy` | `prisma migrate deploy`: aplica as migrações pendentes |
-| `pnpm --filter @hostly/api fake-robot --serial <serial>` | Robô simulado: pareia com a API local (mostra o código; aprove no painel ou no Swagger). Precisa do contracts compilado (`pnpm build`) e não grava o token em disco |
+| `pnpm --filter @hostly/api fake-robot --serial <serial>` | Robô simulado: pareia com a API local (mostra o código; aprove no painel ou no Swagger), conecta no WebSocket, manda `hello` e telemetria e responde ping. `--telemetry-interval <s>` (padrão 10), `--close-after <s>` (fecha limpo) e `--vanish-after <s>` (para de responder sem fechar). Precisa do contracts compilado (`pnpm build`) e não grava o token em disco |
 | `pnpm --filter @hostly/api db:seed` | Seed idempotente: permissões, admin (`SUPER_ADMIN_*`), a operadora (`SEED_OPERATOR_*`) com o admin como `operator_admin` e o cliente interno dela (`SEED_INTERNAL_CLIENT_NAME`) |
 | `docker compose up -d --wait` | Sobe Postgres, Redis e SeaweedFS e espera ficarem saudáveis; o `storage-init` cria o bucket e o CORS logo depois |
 | `docker compose ps -a` | Status dos serviços (`storage-init` termina com `Exited (0)`) |
@@ -88,8 +88,10 @@ A API (`apps/api`) tem regras próprias em [`apps/api/CLAUDE.md`](apps/api/CLAUD
 existem: web e worker entram no `pnpm dev` quando nascerem (#19, #30); `apps/robot` é Gradle, fora do pnpm, e os
 comandos dele chegam na #23.
 
-Contratos (`packages/contracts`, `@hostly/contracts`): schemas Zod dos formatos robô ↔ nuvem, um nome por schema em
-`contractSchemas` (`src/registry.ts`), que vira `schemas/<nome>.json` e a pasta `fixtures/<nome>/{valid,invalid}`.
+Contratos (`packages/contracts`, `@hostly/contracts`): schemas Zod dos formatos robô ↔ nuvem (`ws/*`, mais as constantes
+do socket: caminho, header de auth, intervalos e códigos de fechamento) e da família `live/*` (nuvem → painel: eventos e
+constantes do canal ao vivo). Um nome por schema em `contractSchemas` (`src/registry.ts`), que vira
+`schemas/<nome>.json` e a pasta `fixtures/<nome>/{valid,invalid}`.
 
 - O pacote é só ESM (`"type": "module"`). A API, CommonJS, carrega o `dist` por `require(esm)` (Node 24), então nada de
   top-level `await` no pacote. No Jest da API, `@hostly/contracts` aponta pro `src` e o

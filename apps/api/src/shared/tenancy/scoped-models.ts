@@ -60,6 +60,13 @@ export const SCOPED_MODELS: Readonly<Partial<Record<string, ScopedModel>>> = {
     clientField: 'clientId',
     advertiserField: null,
   },
+  // The row keeps the client the robot had when it arrived; a client user sees only their client's history.
+  TelemetrySnapshot: {
+    organizationWhere: (scope) => ({ organizationId: scope.organizationId }),
+    organizationData: (scope) => ({ organizationId: scope.organizationId }),
+    clientField: 'clientId',
+    advertiserField: null,
+  },
   Invitation: {
     organizationWhere: (scope) => ({ workspace: { organizationId: scope.organizationId } }),
     organizationData: (scope) => ({ workspaceId: scope.workspaceId }),

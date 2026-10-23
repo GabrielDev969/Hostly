@@ -36,6 +36,8 @@ export abstract class WorkspacesRepository {
   abstract findById(id: string): Promise<Workspace | null>;
   abstract findBySlug(slug: string): Promise<Workspace | null>;
   abstract findByUserId(userId: string): Promise<Workspace[]>;
+  // Identity lookup for a robot: call it inside TenantContext.runAsSystem.
+  abstract findOperatorWorkspaceId(organizationId: string): Promise<string | null>;
   abstract update(id: string, data: Partial<Workspace>): Promise<Workspace>;
   abstract softDelete(id: string): Promise<void>;
   abstract transferOwnership(data: TransferOwnershipData): Promise<void>;

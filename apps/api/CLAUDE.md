@@ -124,6 +124,23 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
 - Limites do pareamento (`PairingRateLimiter`) ficam no Redis de verdade, inclusive nos testes (o `@nestjs/throttler`
   é desligado em `NODE_ENV=test`); sem Redis, o pareamento falha fechado (503). O e2e zera as chaves com
   `resetPairingLimits()`.
+- **Socket do robô** (`modules/robot-link`, `ROBOT_SOCKET_PATH`): o token vem no header `Authorization` e é conferido no
+  `verifyClient` do `ws`, antes do upgrade (401 sem abrir). Cada mensagem passa de novo pela identidade
+  (`RobotAuthService.authenticateHash`, em `runAsSystem`) e grava em `runWithScope` com o escopo do robô naquele
+  momento (`clientId` atual, workspace da operadora). O offline do close roda no escopo da organização do robô, porque
+  o token pode já ter sido revogado. Revogar ou re-parear fecha o socket na hora (`RobotTokenEvents`). Presença:
+  `Robot.online`/`lastSeenAt`; a varredura (`RobotPresenceSweeper`, a cada intervalo de ping) derruba quem ficou
+  `online` com `lastSeenAt` velho (restart). O último estado fica no `Robot`; o histórico (`TelemetrySnapshot`) leva o
+  cliente onde aconteceu e é apagado pelo job `cleanup-old-telemetry` depois de `TELEMETRY_RETENTION_DAYS`.
+- **Canal do painel** (`modules/live`, `LIVE_SOCKET_PATH`): `POST /live/tickets` (`robot:read`) dá um ticket de uso
+  único (Redis, `GETDEL`, falha fechada) que o navegador manda como subprotocolo `ticket.<ticket>`, nunca na URL. O
+  socket confere o `Origin` contra `CORS_ORIGINS`, filtra cada evento pela organização e pelo cliente atual do robô
+  (`canSee`) e fecha com `4401` depois de `LIVE_SOCKET_MAX_AGE_MS`.
+- **Uma instância na v1:** o registro de conexões do robô (`RobotConnectionRegistry`) e o barramento de eventos do
+  painel (`LiveEventBus`) ficam em memória, atrás de abstract classes. Com mais de uma instância, os dois passam pro
+  Redis (registro compartilhado pra "a conexão nova derruba a antiga" e pub/sub pros eventos).
+- O e2e dos sockets precisa de `app.listen(0)` e do `WsAdapter` (já no `createTestApp`); o `test/env.ts` usa ping de
+  1 s, 3 faltas e hello em 2 s. Espere sempre com prazo (`waitFor` de `test/helpers/fleet.ts`), nunca com `sleep`.
 - **Tabela de negócio nova** entra em `SCOPED_MODELS` (`src/shared/tenancy/scoped-models.ts`). O
   `tenant-scope.registry.spec.ts` falha se um modelo com `organizationId`/`clientId`/`advertiserId` ficar de fora, se um
   arquivo usar modelo escopado por client cru (`PrismaService`, `PrismaClient` ou `Prisma.TransactionClient`; por ponto,
