@@ -25,8 +25,7 @@ describe('CreateSiteUseCase', () => {
         } as Site),
       ),
       update: jest.fn(),
-      softDelete: jest.fn(),
-      countRobots: jest.fn(),
+      softDeleteUnlessUsed: jest.fn(),
     };
     clients = {
       findMany: jest.fn(),
@@ -63,5 +62,14 @@ describe('CreateSiteUseCase', () => {
       useCase.execute({ clientId: 'c9', name: 'Piso L2', timezone: 'UTC' }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(sites.create).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when the client is deleted while the site is being created', async () => {
+    clients.findById.mockResolvedValue({ id: 'c1' } as Client);
+    sites.create.mockResolvedValue(null);
+
+    await expect(
+      useCase.execute({ clientId: 'c1', name: 'Piso L2', timezone: 'UTC' }),
+    ).rejects.toThrow(new NotFoundException('Client not found'));
   });
 });

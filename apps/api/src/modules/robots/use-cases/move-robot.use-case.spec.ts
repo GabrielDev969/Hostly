@@ -14,7 +14,10 @@ describe('MoveRobotUseCase', () => {
       findMany: jest.fn(),
       findById: jest.fn().mockResolvedValue({ id: 'r1', siteId: 's1', clientId: 'c1' }),
       findBySerial: jest.fn(),
-      update: jest.fn((id, data) => Promise.resolve({ id, ...data } as Robot)),
+      update: jest.fn(),
+      moveToSite: jest.fn((id, site) =>
+        Promise.resolve({ id, siteId: site.id, clientId: site.clientId } as Robot),
+      ),
       revoke: jest.fn(),
       findActiveByTokenHash: jest.fn(),
     };
@@ -23,8 +26,7 @@ describe('MoveRobotUseCase', () => {
       findById: jest.fn().mockResolvedValue({ id: 's9', clientId: 'c9' }),
       create: jest.fn(),
       update: jest.fn(),
-      softDelete: jest.fn(),
-      countRobots: jest.fn(),
+      softDeleteUnlessUsed: jest.fn(),
     };
     useCase = new MoveRobotUseCase(robots, sites);
   });
@@ -32,7 +34,15 @@ describe('MoveRobotUseCase', () => {
   it('moves the robot with the client of the new site', async () => {
     await useCase.execute({ id: 'r1', siteId: 's9' });
 
-    expect(robots.update).toHaveBeenCalledWith('r1', { siteId: 's9', clientId: 'c9' });
+    expect(robots.moveToSite).toHaveBeenCalledWith('r1', { id: 's9', clientId: 'c9' });
+  });
+
+  it('throws 404 when the site is deleted while the robot is being moved', async () => {
+    robots.moveToSite.mockResolvedValue(null);
+
+    await expect(useCase.execute({ id: 'r1', siteId: 's9' })).rejects.toThrow(
+      new NotFoundException('Site not found'),
+    );
   });
 
   it('throws 404 when the robot is not in scope', async () => {
@@ -49,6 +59,6 @@ describe('MoveRobotUseCase', () => {
     await expect(useCase.execute({ id: 'r1', siteId: 's9' })).rejects.toThrow(
       new NotFoundException('Site not found'),
     );
-    expect(robots.update).not.toHaveBeenCalled();
+    expect(robots.moveToSite).not.toHaveBeenCalled();
   });
 });

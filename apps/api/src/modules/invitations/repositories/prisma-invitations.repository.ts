@@ -14,9 +14,19 @@ export class PrismaInvitationsRepository extends InvitationsRepository {
     super();
   }
 
-  async create(data: CreateInvitationData): Promise<Invitation> {
-    const created = await this.scoped.client.invitation.create({ data });
-    return this.toEntity(created);
+  // An invitation to a client locks the client first (lock order in apps/api/CLAUDE.md), so a
+  // concurrent delete either counts it or the invitation finds the client gone.
+  async create(data: CreateInvitationData): Promise<Invitation | null> {
+    const { clientId } = data;
+    if (!clientId) return this.toEntity(await this.scoped.client.invitation.create({ data }));
+    return this.scoped.client.$transaction(async (tx) => {
+      const { count } = await tx.client.updateMany({
+        where: { id: clientId, deletedAt: null },
+        data: { updatedAt: new Date() },
+      });
+      if (count === 0) return null;
+      return this.toEntity(await tx.invitation.create({ data }));
+    });
   }
 
   async findById(id: string): Promise<Invitation | null> {

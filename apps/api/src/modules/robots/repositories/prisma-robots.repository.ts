@@ -70,7 +70,23 @@ export class PrismaRobotsRepository extends RobotsRepository {
     return toRobot(await this.scoped.client.robot.update({ where: { id }, data }));
   }
 
-  // Robot first, then its pairings: the lock order of approving and claiming, so they never deadlock.
+  // Site, then robot: the lock order in prisma-robot-pairings.repository.ts.
+  async moveToSite(id: string, site: { id: string; clientId: string }): Promise<Robot | null> {
+    return this.scoped.client.$transaction(async (tx) => {
+      const { count } = await tx.site.updateMany({
+        where: { id: site.id, deletedAt: null },
+        data: { updatedAt: new Date() },
+      });
+      if (count === 0) return null;
+      const robot = await tx.robot.update({
+        where: { id },
+        data: { siteId: site.id, clientId: site.clientId },
+      });
+      return toRobot(robot);
+    });
+  }
+
+  // Robot, then its pairings: the lock order in prisma-robot-pairings.repository.ts.
   async revoke(id: string): Promise<Robot> {
     return this.scoped.client.$transaction(async (tx) => {
       const robot = await tx.robot.update({

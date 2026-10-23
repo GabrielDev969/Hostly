@@ -16,6 +16,7 @@ describe('RobotAuthService', () => {
       findById: jest.fn(),
       findBySerial: jest.fn(),
       update: jest.fn(),
+      moveToSite: jest.fn(),
       revoke: jest.fn(),
       findActiveByTokenHash: jest.fn().mockResolvedValue(null),
     };

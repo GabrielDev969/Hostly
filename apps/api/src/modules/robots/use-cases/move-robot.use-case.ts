@@ -17,7 +17,8 @@ export class MoveRobotUseCase {
     const site = await this.sites.findById(input.siteId);
     if (!site) throw new NotFoundException('Site not found');
 
-    const moved = await this.robots.update(robot.id, { siteId: site.id, clientId: site.clientId });
+    const moved = await this.robots.moveToSite(robot.id, site);
+    if (!moved) throw new NotFoundException('Site not found');
     return toRobotDto(moved);
   }
 }

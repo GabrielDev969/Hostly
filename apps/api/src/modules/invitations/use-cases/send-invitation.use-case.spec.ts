@@ -240,6 +240,17 @@ describe('SendInvitationUseCase', () => {
       expect(invitations.create).not.toHaveBeenCalled();
     });
 
+    it('throws 404 and sends no email when the client is deleted while inviting', async () => {
+      roles.findByIdInWorkspace.mockResolvedValue(clientRole);
+      clients.findById.mockResolvedValue({ id: 'client-a' } as Client);
+      invitations.create.mockResolvedValue(null);
+
+      await expect(useCase.execute(clientInput)).rejects.toThrow(
+        new NotFoundException('Client not found'),
+      );
+      expect(emailDispatcher.enqueue).not.toHaveBeenCalled();
+    });
+
     it('refuses an operator role with a client', async () => {
       roles.findByIdInWorkspace.mockResolvedValue({
         ...role,

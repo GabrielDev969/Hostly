@@ -73,6 +73,7 @@ export class SendInvitationUseCase {
       tokenHash,
       expiresAt,
     });
+    if (!invitation) throw new NotFoundException('Client not found');
 
     const [workspace, inviter] = await Promise.all([
       this.workspaces.findById(input.workspaceId),

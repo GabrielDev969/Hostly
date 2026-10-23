@@ -121,6 +121,15 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   organizationId)` pro `Site`), e mover troca os dois. `RobotPairing` fica fora do `SCOPED_MODELS` porque nasce antes
   de o robô ter dono (sem coluna de tenant); a aprovação o liga a um `Robot` pelo `robotId`. O robô, sem escopo, só
   passa por `runAsSystem` na entrega do token e no `RobotAuthService` (token → robô ativo).
+- **Soft delete e ordem dos locks.** A FK de um insert só pega `FOR KEY SHARE` no pai, que não espera o `UPDATE` de
+  `deletedAt`. Por isso, quem apaga marca `deletedAt` antes de contar os dependentes, na mesma transação
+  (`softDeleteUnlessUsed` de cliente e de local). E quem cria ou liga um filho a um `Client` ou `Site` trava o pai
+  primeiro, na transação do insert, com `updateMany({ where: { id, deletedAt: null }, data: { updatedAt: now } })`; se
+  `count` for 0, responde 404 e não cria nada. Fazem isso: criar local, mandar e aceitar convite, mover e aprovar robô.
+  Ordem única pra todo caminho: `Client → Site → Robot → RobotPairing` (e `Client → Invitation → WorkspaceMember`).
+  Nenhuma transação trava uma linha mais acima depois de uma mais abaixo, senão o Postgres aborta uma delas (40P01,
+  que vira 500). O comentário de `prisma-robot-pairings.repository.ts` lista cada caminho, e os e2e "racing a ..."
+  provam cada corrida com uma transação parada (`test/helpers/held-transaction.ts`).
 - Limites do pareamento (`PairingRateLimiter`) ficam no Redis de verdade, inclusive nos testes (o `@nestjs/throttler`
   é desligado em `NODE_ENV=test`); sem Redis, o pareamento falha fechado (503). O e2e zera as chaves com
   `resetPairingLimits()`.

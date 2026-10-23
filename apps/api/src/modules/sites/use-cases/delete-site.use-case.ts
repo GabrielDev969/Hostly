@@ -9,9 +9,8 @@ export class DeleteSiteUseCase {
     const site = await this.sites.findById(id);
     if (!site) throw new NotFoundException('Site not found');
     // Deleting is soft, so the robots' foreign key never fires: a robot still here blocks it.
-    if ((await this.sites.countRobots(id)) > 0) {
+    if ((await this.sites.softDeleteUnlessUsed(id)) > 0) {
       throw new ConflictException('Site still has robots; move them first');
     }
-    await this.sites.softDelete(id);
   }
 }

@@ -15,6 +15,7 @@ describe('RevokeRobotUseCase and RenameRobotUseCase', () => {
       findById: jest.fn().mockResolvedValue({ id: 'r1', status: 'active' }),
       findBySerial: jest.fn(),
       update: jest.fn((id, data) => Promise.resolve({ id, ...data } as Robot)),
+      moveToSite: jest.fn(),
       revoke: jest.fn().mockResolvedValue({ id: 'r1', status: 'revoked' }),
       findActiveByTokenHash: jest.fn(),
     };

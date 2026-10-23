@@ -72,6 +72,7 @@ export class ApprovePairingUseCase {
     if (result.status === 'not_pending') {
       throw new ConflictException('This pairing was already approved');
     }
+    if (result.status === 'site_gone') throw new NotFoundException('Site not found');
     return toRobotDto(result.robot);
   }
 }
