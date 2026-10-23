@@ -106,6 +106,16 @@ Painel (`apps/web`, `@hostly/web`): Next.js (App Router) + TanStack Query, lê o
   `useClientFilter()`.
 - Cores, fontes e medidas são CSS variables em `src/app/globals.css`, com os valores padrão da operadora; componente
   nenhum usa hex nem nome de marca.
+- Canal ao vivo (`src/features/robots/live`): o `LiveRobotsProvider` mora no layout de `/robots`, então lista e
+  detalhe dividem um socket, que fecha ao sair da seção ou quando a sessão cai. Ele pede um ticket a cada conexão e
+  manda o ticket só no subprotocolo. Cada evento passa pelo `liveEventSchema`, e o que não valida é ignorado. O
+  evento vai direto pro cache do Query, e cada `open` recarrega o REST. Reconexão:
+  - `4401`: ticket novo na hora;
+  - outro fechamento ou ticket com 429/5xx: backoff de 1 s até 30 s;
+  - ticket com 401/403: para de vez.
+- O painel depende do `@hostly/contracts`: no Next vale o `dist` (o Turbo compila antes), e no Vitest um alias aponta
+  pro `src`. O WebSocket nos testes é o `ws.link` do MSW (`test/robots.ts`).
+- Confirmação é o `Dialog` de `src/components/dialog.tsx`, nunca `confirm()`/`alert()`.
 - ESLint: `@next/eslint-plugin-next`, `react-hooks` e `jsx-a11y` direto no flat config. O `eslint-config-next` fica de
   fora porque puxa plugins que não suportam o ESLint 10; os peers do `jsx-a11y` (ESLint 10) e do `openapi-typescript`
   (TypeScript 6) estão liberados em `peerDependencyRules`, depois de provados.

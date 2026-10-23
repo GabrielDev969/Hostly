@@ -50,6 +50,15 @@
   border-color: var(--color-border);
 }
 
+.danger {
+  background: var(--color-danger);
+  color: var(--color-on-primary);
+}
+
+.danger:hover {
+  background: var(--color-danger-hover);
+}
+
 .button:disabled {
   opacity: 0.6;
   cursor: not-allowed;

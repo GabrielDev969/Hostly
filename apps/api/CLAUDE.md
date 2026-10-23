@@ -140,7 +140,9 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   o token pode já ter sido revogado. Revogar ou re-parear fecha o socket na hora (`RobotTokenEvents`). Presença:
   `Robot.online`/`lastSeenAt`; a varredura (`RobotPresenceSweeper`, a cada intervalo de ping) derruba quem ficou
   `online` com `lastSeenAt` velho (restart). O último estado fica no `Robot`; o histórico (`TelemetrySnapshot`) leva o
-  cliente onde aconteceu e é apagado pelo job `cleanup-old-telemetry` depois de `TELEMETRY_RETENTION_DAYS`.
+  cliente onde aconteceu e é apagado pelo job `cleanup-old-telemetry` depois de `TELEMETRY_RETENTION_DAYS`. O painel lê
+  o histórico em `GET /robots/:id/telemetry?hours=1..24`, em blocos de 5 min agregados em código
+  (`robots/services/telemetry-buckets.ts`). Pelo escopo, o cliente vê só as linhas do tempo em que o robô era dele.
 - **Canal do painel** (`modules/live`, `LIVE_SOCKET_PATH`): `POST /live/tickets` (`robot:read`) dá um ticket de uso
   único (Redis, `GETDEL`, falha fechada) que o navegador manda como subprotocolo `ticket.<ticket>`, nunca na URL. O
   socket confere o `Origin` contra `CORS_ORIGINS`, filtra cada evento pela organização e pelo cliente atual do robô
