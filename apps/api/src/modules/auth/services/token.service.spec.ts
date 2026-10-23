@@ -31,6 +31,19 @@ describe('TokenService', () => {
     expect(payload.sessionId).toBe('s1');
   });
 
+  it('stamps the access token with its issue time in milliseconds', async () => {
+    const now = Date.parse('2026-10-23T12:00:00.734Z');
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const token = await service.signAccessToken({ userId: 'u1', sessionId: 's1' });
+      const payload = jwt.decode<{ iat: number; iatMs: number }>(token);
+      expect(payload.iatMs).toBe(now);
+      expect(payload.iat).toBe(Math.floor(now / 1000));
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('round-trips a 2FA challenge token (kid in header) and rejects tokens with the wrong type marker', async () => {
     const token = await service.signChallengeToken('u1');
     expect(decodeHeader(token).kid).toBe(resolver.currentKid);

@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { WorkspaceMembersRepository } from './workspace-members.repository.interface';
 import type {
+  CreateFromInvitationData,
+  CreateFromInvitationResult,
   CreateWorkspaceMemberData,
   WorkspaceMemberListItem,
   WorkspaceMemberWithRelations,
@@ -14,6 +16,9 @@ import { InvalidateCache } from '@shared/cache/invalidate-cache.decorator';
 import { CACHE_NS, CACHE_TTL } from '@shared/cache/cache.constants';
 import { CacheService } from '@shared/cache/cache.service';
 import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
+
+class ClientGone extends Error {}
+class InvitationNotPending extends Error {}
 
 @Injectable()
 export class PrismaWorkspaceMembersRepository extends WorkspaceMembersRepository {
@@ -29,6 +34,41 @@ export class PrismaWorkspaceMembersRepository extends WorkspaceMembersRepository
   async create(data: CreateWorkspaceMemberData): Promise<WorkspaceMember> {
     const member = await this.prisma.workspaceMember.create({ data });
     return this.toEntity(member);
+  }
+
+  // Accepting runs before the user has a scope. Touching the client row locks it against a
+  // concurrent delete, which locks the row before counting what still points to the client.
+  @InvalidateCache(CACHE_NS.workspaceMembers)
+  async createFromInvitation(data: CreateFromInvitationData): Promise<CreateFromInvitationResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        if (data.clientId) {
+          const { count } = await tx.client.updateMany({
+            where: { id: data.clientId, deletedAt: null },
+            data: { updatedAt: data.now },
+          });
+          if (count === 0) throw new ClientGone();
+        }
+        const { count } = await tx.invitation.updateMany({
+          where: { id: data.invitationId, acceptedAt: null, expiresAt: { gt: data.now } },
+          data: { acceptedAt: data.now },
+        });
+        if (count === 0) throw new InvitationNotPending();
+        const member = await tx.workspaceMember.create({
+          data: {
+            userId: data.userId,
+            workspaceId: data.workspaceId,
+            roleId: data.roleId,
+            clientId: data.clientId,
+          },
+        });
+        return { status: 'created', member: this.toEntity(member) };
+      });
+    } catch (error) {
+      if (error instanceof ClientGone) return { status: 'client_gone' };
+      if (error instanceof InvitationNotPending) return { status: 'not_pending' };
+      throw error;
+    }
   }
 
   async findById(id: string): Promise<WorkspaceMember | null> {

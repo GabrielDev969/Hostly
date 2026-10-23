@@ -1,11 +1,17 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/test-database';
+import { randomUUID } from 'crypto';
+import {
+  startTestDatabase,
+  stopTestDatabase,
+  resetDatabase,
+  getPrisma,
+} from './helpers/test-database';
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
-import { provisionOperator } from './helpers/operator';
+import { createClient, provisionOperator } from './helpers/operator';
 
 describe('Invitations flow (e2e)', () => {
   let app: INestApplication;
@@ -179,5 +185,81 @@ describe('Invitations flow (e2e)', () => {
       .send({ email: 'invitee@example.com', roleId: clientAdminRole.id })
       .expect(400);
     expect(res.body.message).toMatch(/client_admin requires a client membership/);
+  });
+
+  describe('accepting revalidates what changed since the invitation was sent', () => {
+    let clientId: string;
+    let roleId: string;
+    let invitationToken: string;
+    let inviteeToken: string;
+
+    const accept = () =>
+      request(server)
+        .post('/api/v1/invitations/accept')
+        .set('Authorization', `Bearer ${inviteeToken}`)
+        .send({ token: invitationToken });
+
+    const memberships = async () =>
+      getPrisma().workspaceMember.findMany({
+        where: { user: { email: 'invitee@example.com' } },
+      });
+
+    beforeEach(async () => {
+      const inviterToken = await registerAndLogin('inviter@example.com', 'Inviter');
+      const workspaceId = await provisionOperator(app, 'inviter@example.com');
+      const prisma = getPrisma();
+      const { organizationId } = await prisma.workspace.findUniqueOrThrow({
+        where: { id: workspaceId },
+      });
+      clientId = await createClient(organizationId, 'Shopping A', randomUUID());
+      const role = await request(server)
+        .post('/api/v1/rbac/roles')
+        .set('Authorization', `Bearer ${inviterToken}`)
+        .set('x-workspace-id', workspaceId)
+        .send({ name: 'client-reader', permissionKeys: ['workspace:read'] })
+        .expect(201);
+      roleId = role.body.id as string;
+
+      const invite = await request(server)
+        .post('/api/v1/invitations')
+        .set('Authorization', `Bearer ${inviterToken}`)
+        .set('x-workspace-id', workspaceId)
+        .send({ email: 'invitee@example.com', roleId, clientId })
+        .expect(201);
+      invitationToken = invite.body.token as string;
+      inviteeToken = await registerAndLogin('invitee@example.com', 'Invitee');
+    });
+
+    it('refuses a client deleted after the invitation was sent and creates no membership', async () => {
+      await getPrisma().client.update({ where: { id: clientId }, data: { deletedAt: new Date() } });
+
+      const res = await accept().expect(409);
+      expect(res.body.message).toBe('The client of this invitation no longer exists');
+      expect(await memberships()).toEqual([]);
+      const invitation = await getPrisma().invitation.findFirstOrThrow({ where: { clientId } });
+      expect(invitation.acceptedAt).toBeNull();
+    });
+
+    it('refuses a role that grew past the client ceiling and creates no membership', async () => {
+      const prisma = getPrisma();
+      const userRead = await prisma.permission.findFirstOrThrow({ where: { key: 'user:read' } });
+      await prisma.rolePermission.create({ data: { roleId, permissionId: userRead.id } });
+
+      await accept().expect(400);
+      expect(await memberships()).toEqual([]);
+    });
+
+    it('accepts into a paused client', async () => {
+      await getPrisma().client.update({ where: { id: clientId }, data: { status: 'paused' } });
+
+      await accept().expect(200);
+      expect((await memberships()).map((m) => m.clientId)).toEqual([clientId]);
+    });
+
+    it('accepts only once', async () => {
+      await accept().expect(200);
+      await accept().expect(400);
+      expect(await memberships()).toHaveLength(1);
+    });
   });
 });

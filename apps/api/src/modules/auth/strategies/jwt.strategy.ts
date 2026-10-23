@@ -38,10 +38,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     sub: string;
     sessionId?: string;
     type?: string;
-    iat: number;
+    iatMs?: number;
   }): Promise<AccessTokenPayload> {
     // Challenge tokens share the signing key; only session-bound access tokens may authenticate.
-    if (payload.type !== undefined || !payload.sessionId) {
+    if (payload.type !== undefined || !payload.sessionId || typeof payload.iatMs !== 'number') {
       throw new UnauthorizedException('Invalid access token');
     }
 
@@ -51,7 +51,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     const invalidatedAt = await this.users.findTokensInvalidatedAt(payload.sub);
-    if (invalidatedAt && payload.iat * 1000 < invalidatedAt.getTime()) {
+    // A token from the same millisecond as the invalidation cannot be ordered, so it fails closed.
+    if (invalidatedAt && payload.iatMs <= invalidatedAt.getTime()) {
       throw new UnauthorizedException('Token has been invalidated');
     }
 

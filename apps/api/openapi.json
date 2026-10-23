@@ -3355,7 +3355,7 @@
             "description": "Membership created"
           },
           "400": {
-            "description": "Validation failed\n\nExpired or already accepted",
+            "description": "Validation failed\n\nExpired, already accepted, or its role no longer fits the membership",
             "content": {
               "application/json": {
                 "schema": {
@@ -3376,6 +3376,16 @@
           },
           "404": {
             "description": "Invitation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already a member, or the role or client of the invitation no longer exists",
             "content": {
               "application/json": {
                 "schema": {

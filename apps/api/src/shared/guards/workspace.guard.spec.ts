@@ -54,6 +54,7 @@ describe('WorkspaceGuard', () => {
       updateRole: jest.fn(),
       delete: jest.fn(),
       findManyByWorkspaceWithRelations: jest.fn(),
+      createFromInvitation: jest.fn(),
     };
     workspaces = {
       findById: jest.fn(),

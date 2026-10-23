@@ -33,8 +33,7 @@ describe('CreateSiteUseCase', () => {
       findById: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
-      softDelete: jest.fn(),
-      countDependents: jest.fn(),
+      softDeleteUnlessUsed: jest.fn(),
     };
     useCase = new CreateSiteUseCase(sites, clients);
   });

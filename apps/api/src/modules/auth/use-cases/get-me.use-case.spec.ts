@@ -80,6 +80,7 @@ describe('GetMeUseCase', () => {
       updateRole: jest.fn(),
       delete: jest.fn(),
       findManyByWorkspaceWithRelations: jest.fn(),
+      createFromInvitation: jest.fn(),
     };
     useCase = new GetMeUseCase(users, workspaces, members);
   });

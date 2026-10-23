@@ -24,8 +24,8 @@ export class PrismaInvitationsRepository extends InvitationsRepository {
     return found ? this.toEntity(found) : null;
   }
 
-  // findByTokenHash and markAsAccepted serve the accept flow, which runs before the user has a
-  // membership and so without a scope; everything else goes through the scoped client.
+  // findByTokenHash serves the accept flow, which runs before the user has a membership and so
+  // without a scope; everything else goes through the scoped client.
   async findByTokenHash(tokenHash: string): Promise<Invitation | null> {
     const found = await this.prisma.invitation.findUnique({
       where: { tokenHash },
@@ -54,13 +54,6 @@ export class PrismaInvitationsRepository extends InvitationsRepository {
       },
     });
     return found ? this.toEntity(found) : null;
-  }
-
-  async markAsAccepted(id: string): Promise<void> {
-    await this.prisma.invitation.update({
-      where: { id },
-      data: { acceptedAt: new Date() },
-    });
   }
 
   async delete(id: string): Promise<void> {

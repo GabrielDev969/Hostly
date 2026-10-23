@@ -19,6 +19,5 @@ export abstract class InvitationsRepository {
     email: string,
     workspaceId: string,
   ): Promise<Invitation | null>;
-  abstract markAsAccepted(id: string): Promise<void>;
   abstract delete(id: string): Promise<void>;
 }

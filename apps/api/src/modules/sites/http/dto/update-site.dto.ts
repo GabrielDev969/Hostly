@@ -1,14 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, TransformFnParams } from 'class-transformer';
-import {
-  IsOptional,
-  ValidateIf,
-  IsString,
-  IsTimeZone,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
-import { canonicalTimeZone } from './canonical-time-zone';
+import { IsOptional, ValidateIf, IsString, MaxLength, MinLength } from 'class-validator';
+import { canonicalTimeZone, IsRegionTimeZone } from './canonical-time-zone';
 
 const trim = ({ value }: TransformFnParams): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -25,7 +18,7 @@ export class UpdateSiteDto {
 
   @ApiProperty({ required: false, example: 'America/Sao_Paulo' })
   @ValidateIf((_, value) => value !== undefined)
-  @IsTimeZone()
+  @IsRegionTimeZone()
   @Transform(canonicalTimeZone)
   timezone?: string;
 

@@ -11,14 +11,12 @@ export class DeleteClientUseCase {
     if (client.isInternal) throw new ConflictException('The internal client cannot be deleted');
 
     // Deleting is soft, so foreign keys never fire: anything still pointing here blocks it.
-    const dependents = await this.clients.countDependents(id);
+    const dependents = await this.clients.softDeleteUnlessUsed(id);
     const blocking = Object.entries(dependents)
       .filter(([, count]) => count > 0)
       .map(([kind]) => kind);
     if (blocking.length > 0) {
       throw new ConflictException(`Client still has ${blocking.join(', ')}; remove them first`);
     }
-
-    await this.clients.softDelete(id);
   }
 }

@@ -209,7 +209,7 @@ describe('Clients and sites (e2e)', () => {
     });
 
     it('rejects an invalid or missing time zone', async () => {
-      for (const timezone of ['Mars/Olympus', '', undefined]) {
+      for (const timezone of ['Mars/Olympus', '+03:00', 'EST', '', undefined]) {
         await as('opAdminX')
           .post('/api/v1/sites', { clientId: clientA, name: 'Piso X', timezone })
           .expect(400);

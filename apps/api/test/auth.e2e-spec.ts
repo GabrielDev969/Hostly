@@ -277,7 +277,7 @@ describe('Auth flow (e2e)', () => {
     const { JWT_ISSUER, JWT_AUDIENCE } =
       require('../src/modules/auth/services/token.service') as typeof import('../src/modules/auth/services/token.service');
     const overlapToken = await new JwtService({}).signAsync(
-      { sub: payload.sub, sessionId: payload.sessionId },
+      { sub: payload.sub, sessionId: payload.sessionId, iatMs: Date.now() },
       {
         privateKey: previousPrivatePem,
         keyid: __TEST_JWT_KEYS__.previousKid,
