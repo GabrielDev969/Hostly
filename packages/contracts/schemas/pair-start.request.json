@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "pair-start.request",
+  "type": "object",
+  "properties": {
+    "serial": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,64}$",
+      "description": "Robot serial number, from getRobotSn"
+    }
+  },
+  "required": [
+    "serial"
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "map-points.request",
+  "type": "object",
+  "properties": {
+    "mapName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Map name, from getMapName"
+    },
+    "points": {
+      "maxItems": 500,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number",
+            "description": "X on the current map, in meters"
+          },
+          "y": {
+            "type": "number",
+            "description": "Y on the current map, in meters"
+          },
+          "theta": {
+            "type": "number",
+            "description": "Facing direction, in radians"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "theta",
+          "name"
+        ]
+      },
+      "description": "Points read with getPlaceList"
+    }
+  },
+  "required": [
+    "mapName",
+    "points"
+  ]
+}
