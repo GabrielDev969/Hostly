@@ -178,14 +178,15 @@ describe('robot presence use cases', () => {
   });
 
   it('sweeps stale robots as system work, older than the missed pings allow', async () => {
+    const window = env.ROBOT_SOCKET_PING_INTERVAL_MS * env.ROBOT_SOCKET_MISSED_PINGS;
     const before = Date.now();
     await expect(new SweepStaleRobotsUseCase(presence, live).execute()).resolves.toBe(1);
+    const after = Date.now();
 
     expect(scopes).toEqual([null]);
     const [seenBefore] = presence.markStaleOffline.mock.calls[0]!;
-    expect(before - seenBefore.getTime()).toBeGreaterThanOrEqual(
-      env.ROBOT_SOCKET_PING_INTERVAL_MS * env.ROBOT_SOCKET_MISSED_PINGS,
-    );
+    expect(seenBefore.getTime()).toBeGreaterThanOrEqual(before - window);
+    expect(seenBefore.getTime()).toBeLessThanOrEqual(after - window);
     expect(published).toEqual([
       expect.objectContaining({
         clientId: 'cA',
@@ -200,16 +201,17 @@ describe('robot presence use cases', () => {
       system = TenantContext.isSystem;
       return Promise.resolve(3);
     });
+    const retention = env.TELEMETRY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
     const before = Date.now();
 
     await expect(new CleanupOldTelemetryUseCase(presence).execute()).resolves.toEqual({
       deleted: 3,
     });
+    const after = Date.now();
 
     const [cutoff] = presence.deleteTelemetryOlderThan.mock.calls[0]!;
-    expect(before - cutoff.getTime()).toBeGreaterThanOrEqual(
-      env.TELEMETRY_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-    );
+    expect(cutoff.getTime()).toBeGreaterThanOrEqual(before - retention);
+    expect(cutoff.getTime()).toBeLessThanOrEqual(after - retention);
     expect(system).toBe(true);
   });
 });
