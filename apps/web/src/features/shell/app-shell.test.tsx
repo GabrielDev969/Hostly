@@ -1,9 +1,10 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import PanelLayout from '@/app/(panel)/layout';
 import PanelHome from '@/app/(panel)/page';
+import { Providers } from '@/app/providers';
 import { ComingSoon } from '@/components/states';
 import { CLIENT_A, CLIENT_B, type RoleName } from '../../../test/fixtures';
 import { ACCESS_TOKEN, panelHandlers } from '../../../test/handlers';
@@ -16,6 +17,11 @@ function renderPanel(role: RoleName, path = '/overview', page = <ComingSoon titl
   server.use(...api.handlers);
   setLocation(path);
   return { ...renderWithSession(<PanelLayout>{page}</PanelLayout>), ...api };
+}
+
+// The phone bar; not by role, since the page headers inside the content count as banners in jsdom.
+function topbar() {
+  return screen.getByRole('button', { name: 'Menu' }).closest('header')!;
 }
 
 async function menuLabels() {
@@ -63,9 +69,11 @@ describe('panel menu per role', () => {
     expect(await menuLabels()).toEqual(pages);
   });
 
-  it('shows the organization name from the API at the top of the menu', async () => {
+  it('shows the organization name from the API at the top of the menu and of the phone bar', async () => {
     renderPanel('operator_admin');
-    expect(await screen.findByText('Operadora Teste')).toBeInTheDocument();
+    const menu = await screen.findByRole('complementary');
+    expect(within(menu).getByText('Operadora Teste')).toBeInTheDocument();
+    expect(within(topbar()).getByText('Operadora Teste')).toBeInTheDocument();
   });
 
   it('marks the current page', async () => {
@@ -139,6 +147,152 @@ describe('client selector', () => {
     await menuLabels();
     expect(screen.queryByText('Cliente')).not.toBeInTheDocument();
     expect(calls.requests.some((url) => url.includes('/api/v1/clients'))).toBe(false);
+  });
+});
+
+// jsdom does no layout: the panel is always in the page here, and the "Menu" button works at any width.
+describe('phone menu', () => {
+  async function renderMenu(path = '/robots') {
+    const rendered = renderPanel('operator_admin', path);
+    await menuLabels();
+    const toggle = screen.getByRole('button', { name: 'Menu' });
+    const menu = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    return { ...rendered, user: userEvent.setup(), toggle, menu: menu! };
+  }
+
+  function expectClosed(toggle: HTMLElement, menu: HTMLElement) {
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(menu).not.toHaveAttribute('data-open');
+    expect(toggle).toHaveFocus();
+  }
+
+  it('opens from the "Menu" button, which says what it controls and whether it is open', async () => {
+    const { user, toggle, menu } = await renderMenu();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(menu).toContainElement(screen.getByRole('navigation', { name: 'Menu principal' }));
+    expect(menu).toContainElement(screen.getByRole('combobox', { name: 'Cliente' }));
+
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(menu).toHaveAttribute('data-open');
+  });
+
+  it('keeps the focus inside while open', async () => {
+    const { user, toggle } = await renderMenu();
+    await user.click(toggle);
+    const close = screen.getByRole('button', { name: 'Fechar menu' });
+    const logout = screen.getByRole('button', { name: 'Sair' });
+
+    expect(close).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(logout).toHaveFocus();
+    await user.tab();
+    expect(close).toHaveFocus();
+  });
+
+  it('makes the rest of the page inert while open, and gives it back on closing', async () => {
+    const { user, toggle, menu } = await renderMenu();
+    const background = [
+      screen.getByRole('link', { name: 'Pular para o conteúdo' }),
+      topbar(),
+      screen.getByRole('main'),
+    ];
+
+    await user.click(toggle);
+    expect(background.map((element) => element.inert)).toEqual([true, true, true]);
+    // jsdom has no inert of its own: the property is only what the code set.
+    expect(menu.inert).toBeFalsy();
+
+    await user.keyboard('{Escape}');
+    expect(background.map((element) => element.inert)).toEqual([false, false, false]);
+  });
+
+  it('closes on Esc and gives the focus back to the button', async () => {
+    const { user, toggle, menu } = await renderMenu();
+    await user.click(toggle);
+    await user.keyboard('{Escape}');
+    expectClosed(toggle, menu);
+  });
+
+  it('closes from its "Fechar menu" button', async () => {
+    const { user, toggle, menu } = await renderMenu();
+    await user.click(toggle);
+    await user.click(screen.getByRole('button', { name: 'Fechar menu' }));
+    expectClosed(toggle, menu);
+  });
+
+  it('closes on a tap outside it, on the backdrop', async () => {
+    const { user, toggle, menu } = await renderMenu();
+    await user.click(toggle);
+    const backdrop = topbar().nextElementSibling as HTMLElement;
+    expect(backdrop).toHaveAttribute('aria-hidden', 'true');
+
+    await user.click(backdrop);
+
+    expectClosed(toggle, menu);
+    expect(topbar().nextElementSibling).toBe(menu);
+  });
+
+  it('stays open on a tap inside it', async () => {
+    const { user, toggle, menu } = await renderMenu();
+    await user.click(toggle);
+    await user.click(within(menu).getByText('Operadora Teste'));
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('closes on following a menu link, even to the page it is on', async () => {
+    const { user, toggle, menu } = await renderMenu('/robots');
+    // Stop the navigation itself: only the click matters here, and jsdom cannot navigate.
+    const stop = (event: MouseEvent) => event.preventDefault();
+    document.addEventListener('click', stop, true);
+    try {
+      await user.click(toggle);
+      await user.click(within(menu).getByRole('link', { name: 'Robôs' }));
+      expectClosed(toggle, menu);
+    } finally {
+      document.removeEventListener('click', stop, true);
+    }
+  });
+
+  it('closes when the page changes, as with the back button', async () => {
+    const { user, toggle, menu, rerender, session, queryClient } = await renderMenu('/robots');
+    await user.click(toggle);
+
+    setLocation('/media');
+    rerender(
+      <Providers sessionClient={session} queryClient={queryClient}>
+        <PanelLayout>
+          <ComingSoon title="Página" />
+        </PanelLayout>
+      </Providers>,
+    );
+
+    expectClosed(toggle, menu);
+  });
+
+  it('closes when the window grows past the phone width', async () => {
+    const listeners = new Set<() => void>();
+    const query = {
+      matches: true,
+      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+    };
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => query });
+    try {
+      const { user, toggle, menu } = await renderMenu();
+      await user.click(toggle);
+      expect(listeners.size).toBe(1);
+
+      query.matches = false;
+      act(() => listeners.forEach((listener) => listener()));
+
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(menu).not.toHaveAttribute('data-open');
+      expect(listeners.size).toBe(0);
+    } finally {
+      Reflect.deleteProperty(window, 'matchMedia');
+    }
   });
 });
 

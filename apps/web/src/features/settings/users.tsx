@@ -58,7 +58,7 @@ export function UsersSection() {
     );
   } else {
     body = (
-      <div className={styles.tableWrap}>
+      <div className={styles.tableWrap} tabIndex={0} role="region" aria-label="Tabela de usuários">
         <table className={styles.table}>
           <caption className="visually-hidden">Usuários</caption>
           <thead>

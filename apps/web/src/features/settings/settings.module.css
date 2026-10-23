@@ -162,8 +162,10 @@
 }
 
 .fieldRow dd {
+  min-width: 0;
   margin: 0;
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .soon {

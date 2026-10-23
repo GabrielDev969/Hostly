@@ -85,6 +85,13 @@
   margin: 0;
 }
 
+.back a,
+.robot a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+}
+
 .panelHeader {
   display: flex;
   flex-wrap: wrap;
