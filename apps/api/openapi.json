@@ -3167,7 +3167,7 @@
         },
         "responses": {
           "201": {
-            "description": "Includes the acceptance token (use it to send the email)",
+            "description": "Invitation created and emailed; the acceptance token goes only in the email",
             "content": {
               "application/json": {
                 "schema": {
@@ -7093,11 +7093,6 @@
             "format": "uuid",
             "nullable": true,
             "description": "Client the new member will belong to; null for an operator member"
-          },
-          "token": {
-            "type": "string",
-            "description": "Acceptance token. Only returned on creation.",
-            "example": "inv_8f3a91c2-..."
           },
           "expiresAt": {
             "format": "date-time",

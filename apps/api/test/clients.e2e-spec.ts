@@ -387,7 +387,7 @@ describe('Clients and sites (e2e)', () => {
       await request(server)
         .post('/api/v1/invitations/accept')
         .set('Authorization', `Bearer ${newcomer}`)
-        .send({ token: invite.body.token as string })
+        .send({ token: emailDispatcher.tokenFor(email) })
         .expect(200);
 
       const membership = await getPrisma().workspaceMember.findFirstOrThrow({

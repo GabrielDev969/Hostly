@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { randomUUID } from 'crypto';
+import { Writable } from 'stream';
 import {
   startTestDatabase,
   stopTestDatabase,
@@ -17,12 +18,20 @@ describe('Invitations flow (e2e)', () => {
   let app: INestApplication;
   let server: App;
   let emailDispatcher: TestEmailDispatcher;
+  // What the app logs (pino, at trace level), to prove the invitation token never reaches it.
+  const logged: string[] = [];
+  const logs = new Writable({
+    write(chunk: Buffer, _encoding, callback) {
+      logged.push(chunk.toString('utf8'));
+      callback();
+    },
+  });
 
   beforeAll(async () => {
     await startTestDatabase();
 
     const { createTestApp } = require('./helpers/test-app') as typeof import('./helpers/test-app');
-    ({ app, emailDispatcher } = await createTestApp());
+    ({ app, emailDispatcher } = await createTestApp({ logs }));
     server = app.getHttpServer() as App;
   });
 
@@ -72,13 +81,13 @@ describe('Invitations flow (e2e)', () => {
     };
     expect(staffRole).toBeDefined();
 
-    const inviteRes = await request(server)
+    await request(server)
       .post('/api/v1/invitations')
       .set('Authorization', `Bearer ${inviterToken}`)
       .set('x-workspace-id', workspaceId)
       .send({ email: 'invitee@example.com', roleId: staffRole.id })
       .expect(201);
-    const token = inviteRes.body.token as string;
+    const token = emailDispatcher.tokenFor('invitee@example.com');
     expect(token).toMatch(/^[0-9a-f]{64}$/);
 
     const inviteeToken = await registerAndLogin('invitee@example.com', 'Invitee');
@@ -98,6 +107,69 @@ describe('Invitations flow (e2e)', () => {
     expect(ids).toEqual([workspaceId]);
   });
 
+  it('never hands out the token: not on create (replayed or not), list or revoke, nor in logs or audit', async () => {
+    const inviterToken = await registerAndLogin('inviter@example.com', 'Inviter');
+    const workspaceId = await provisionOperator(app, 'inviter@example.com');
+    const asInviter = (req: request.Test) =>
+      req.set('Authorization', `Bearer ${inviterToken}`).set('x-workspace-id', workspaceId);
+    const rolesRes = await asInviter(request(server).get('/api/v1/rbac/roles')).expect(200);
+    const roleId = (rolesRes.body as { id: string; name: string }[]).find(
+      (r) => r.name === 'operator_staff',
+    )!.id;
+    const invite = () =>
+      asInviter(request(server).post('/api/v1/invitations'))
+        .set('Idempotency-Key', 'invite-invitee-1')
+        .send({ email: 'invitee@example.com', roleId });
+
+    const created = await invite().expect(201);
+    const token = emailDispatcher.tokenFor('invitee@example.com');
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(created.body).not.toHaveProperty('token');
+    expect(created.text).not.toContain(token);
+
+    // The idempotent replay serves the stored response, which never held the token either.
+    const replayed = await invite().expect(201);
+    expect(replayed.body).toEqual(created.body);
+    expect(replayed.text).not.toContain(token);
+
+    const list = await asInviter(request(server).get('/api/v1/invitations')).expect(200);
+    expect(list.body).toHaveLength(1);
+    expect(list.body[0]).not.toHaveProperty('token');
+    expect(list.text).not.toContain(token);
+
+    const other = await asInviter(request(server).post('/api/v1/invitations'))
+      .send({ email: 'other@example.com', roleId })
+      .expect(201);
+    const otherToken = emailDispatcher.tokenFor('other@example.com');
+    expect(other.text).not.toContain(otherToken);
+    const revoked = await asInviter(
+      request(server).delete(`/api/v1/invitations/${other.body.id as string}`),
+    ).expect(204);
+    expect(revoked.text).toBe('');
+
+    const audit = await getPrisma().auditLog.findMany({
+      where: { action: { in: ['invitation.sent', 'invitation.revoked'] } },
+    });
+    expect(audit.map((row) => row.action).sort()).toEqual([
+      'invitation.revoked',
+      'invitation.sent',
+      'invitation.sent',
+    ]);
+    for (const secret of [token, otherToken]) {
+      expect(JSON.stringify(audit)).not.toContain(secret);
+      expect(logged.join('')).not.toContain(secret);
+    }
+
+    // The token from the email is still what accepts the invitation.
+    const inviteeToken = await registerAndLogin('invitee@example.com', 'Invitee');
+    const accepted = await request(server)
+      .post('/api/v1/invitations/accept')
+      .set('Authorization', `Bearer ${inviteeToken}`)
+      .send({ token })
+      .expect(200);
+    expect(accepted.body.workspaceId).toBe(workspaceId);
+  });
+
   it('rejects accept when logged-in email does not match the invitation', async () => {
     const inviterToken = await registerAndLogin('inviter@example.com', 'Inviter');
     await provisionOperator(app, 'inviter@example.com');
@@ -114,13 +186,13 @@ describe('Invitations flow (e2e)', () => {
       id: string;
     };
 
-    const inviteRes = await request(server)
+    await request(server)
       .post('/api/v1/invitations')
       .set('Authorization', `Bearer ${inviterToken}`)
       .set('x-workspace-id', workspaceId)
       .send({ email: 'invitee@example.com', roleId: staffRole.id })
       .expect(201);
-    const token = inviteRes.body.token as string;
+    const token = emailDispatcher.tokenFor('invitee@example.com');
 
     const wrongUserToken = await registerAndLogin('wrong@example.com', 'Wrong User');
 
@@ -220,13 +292,13 @@ describe('Invitations flow (e2e)', () => {
         .expect(201);
       roleId = role.body.id as string;
 
-      const invite = await request(server)
+      await request(server)
         .post('/api/v1/invitations')
         .set('Authorization', `Bearer ${inviterToken}`)
         .set('x-workspace-id', workspaceId)
         .send({ email: 'invitee@example.com', roleId, clientId })
         .expect(201);
-      invitationToken = invite.body.token as string;
+      invitationToken = emailDispatcher.tokenFor('invitee@example.com');
       inviteeToken = await registerAndLogin('invitee@example.com', 'Invitee');
     });
 

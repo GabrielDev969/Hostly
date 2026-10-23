@@ -120,7 +120,7 @@ describe('SendInvitationUseCase', () => {
     invitedById: 'inviter',
   };
 
-  it('persists only the token hash and returns the raw token, with 7-day TTL', async () => {
+  it('persists only the token hash, emails the raw token and never returns it, with 7-day TTL', async () => {
     roles.findByIdInWorkspace.mockResolvedValue(role);
     users.findByEmail.mockResolvedValue(null);
     invitations.findPendingByEmailAndWorkspace.mockResolvedValue(null);
@@ -142,12 +142,20 @@ describe('SendInvitationUseCase', () => {
     expect(createArg.invitedById).toBe(input.invitedById);
     expect(createArg.tokenHash).toMatch(/^[0-9a-f]{64}$/);
 
-    expect(result.token).toMatch(/^[0-9a-f]{64}$/);
-    expect(result.token).not.toBe(createArg.tokenHash);
+    // The raw token reaches the invitee only through the email link.
+    const email = emailDispatcher.enqueue.mock.calls[0]![0];
+    expect(email.to).toBe(input.email);
+    const rawToken = new URL(email.text.match(/https?:\/\/\S+/)![0]).searchParams.get('token')!;
+    expect(rawToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(rawToken).not.toBe(createArg.tokenHash);
     const { CryptoUtil } = require('@shared/utils/crypto.util') as {
       CryptoUtil: { hashToken(t: string): string };
     };
-    expect(CryptoUtil.hashToken(result.token as string)).toBe(createArg.tokenHash);
+    expect(CryptoUtil.hashToken(rawToken)).toBe(createArg.tokenHash);
+
+    expect(result).not.toHaveProperty('token');
+    expect(JSON.stringify(result)).not.toContain(rawToken);
+    expect(JSON.stringify(result)).not.toContain(createArg.tokenHash);
 
     const ttlMs = createArg.expiresAt.getTime() - Date.now();
     expect(ttlMs).toBeGreaterThan(6.9 * 24 * 60 * 60 * 1000);
