@@ -9,6 +9,8 @@ import { AppModule } from '../../src/app.module';
 import { loggerConfig } from '../../src/config/logger.config';
 import { EmailDispatcher } from '../../src/shared/mailer/email-dispatcher.service';
 import { TestEmailDispatcher } from './test-email-dispatcher';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { createRedisCache } from './redis-cache';
 
 export interface TestAppHandle {
   app: INestApplication;
@@ -18,6 +20,8 @@ export interface TestAppHandle {
 export interface TestAppOptions {
   // Sends every log, at trace level, through the app's real pino config into this stream (silent otherwise).
   logs?: Writable;
+  // Caches in Redis, as production does, instead of the in-memory store NODE_ENV=test picks.
+  redisCache?: boolean;
 }
 
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestAppHandle> {
@@ -36,6 +40,12 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     };
     const params: Params = { ...loggerConfig, pinoHttp: [pinoOptions, options.logs] };
     builder = builder.overrideProvider(PARAMS_PROVIDER_TOKEN).useValue(params);
+  }
+  if (options.redisCache) {
+    const cache = createRedisCache();
+    builder = builder
+      .overrideProvider(CACHE_MANAGER)
+      .useValue(Object.assign(cache, { onModuleDestroy: () => cache.disconnect() }));
   }
   const moduleRef = await builder.compile();
 
