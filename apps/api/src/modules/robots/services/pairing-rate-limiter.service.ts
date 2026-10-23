@@ -18,6 +18,11 @@ export const PAIRING_LIMITS = {
   pollIntervalMs: 1_000,
 } as const;
 
+// A reserved code attempt, refunded into the window that counted it.
+export interface CodeAttempt {
+  key: string;
+}
+
 export interface PairingRedis {
   eval(script: string, numKeys: number, key: string, windowMs: number): Promise<unknown>;
   set(key: string, value: string, mode: 'PX', ttlMs: number, flag: 'NX'): Promise<'OK' | null>;
@@ -30,10 +35,11 @@ local count = redis.call('INCR', KEYS[1])
 if count == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
 return count`;
 
-// Gives back a reserved attempt; a counter whose window already ended is left alone.
-export const REFUND_IN_WINDOW = `
-if redis.call('EXISTS', KEYS[1]) == 1 then return redis.call('DECR', KEYS[1]) end
-return 0`;
+// Gives back a reserved attempt without ever going below zero.
+export const REFUND_ATTEMPT = `
+local count = tonumber(redis.call('GET', KEYS[1]) or '0')
+if count > 0 then return redis.call('DECR', KEYS[1]) end
+return count`;
 
 const tooMany = () =>
   new HttpException('Too many pairing attempts; try again later', HttpStatus.TOO_MANY_REQUESTS);
@@ -53,17 +59,18 @@ export class PairingRateLimiter implements OnModuleDestroy {
   }
 
   // Every attempt takes a slot first, in one atomic step, so concurrent guesses cannot all slip
-  // past the check; a right code gives its slot back, so only wrong codes count.
-  async reserveCodeAttempt(userId: string): Promise<void> {
+  // past the check; a right code gives its slot back, so only wrong codes count. The key names
+  // its window, so a late refund lands in the window that counted it, never in a newer one.
+  async reserveCodeAttempt(userId: string): Promise<CodeAttempt> {
     const { limit, windowMs } = PAIRING_LIMITS.wrongCodesPerUser;
-    const count = await this.call(() =>
-      this.redis.eval(INCREMENT_IN_WINDOW, 1, this.wrongCodeKey(userId), windowMs),
-    );
+    const key = `${PAIRING_LIMIT_PREFIX}code:user:${userId}:${Math.floor(Date.now() / windowMs)}`;
+    const count = await this.call(() => this.redis.eval(INCREMENT_IN_WINDOW, 1, key, windowMs));
     if (Number(count) > limit) throw tooMany();
+    return { key };
   }
 
-  async refundCodeAttempt(userId: string): Promise<void> {
-    await this.call(() => this.redis.eval(REFUND_IN_WINDOW, 1, this.wrongCodeKey(userId), 0));
+  async refundCodeAttempt(attempt: CodeAttempt): Promise<void> {
+    await this.call(() => this.redis.eval(REFUND_ATTEMPT, 1, attempt.key, 0));
   }
 
   async hitPoll(pollKeyHash: string): Promise<void> {
@@ -81,10 +88,6 @@ export class PairingRateLimiter implements OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     await this.redis.quit().catch(() => undefined);
-  }
-
-  private wrongCodeKey(userId: string): string {
-    return `${PAIRING_LIMIT_PREFIX}code:user:${userId}`;
   }
 
   private async call<T>(command: () => Promise<T>): Promise<T> {

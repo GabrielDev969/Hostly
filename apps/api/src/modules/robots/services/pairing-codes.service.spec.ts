@@ -17,14 +17,17 @@ describe('PairingCodesService', () => {
       approve: jest.fn(),
       claimApproved: jest.fn(),
     };
-    limiter = { reserveCodeAttempt: jest.fn(), refundCodeAttempt: jest.fn() };
+    limiter = {
+      reserveCodeAttempt: jest.fn().mockResolvedValue({ key: 'attempt-key' }),
+      refundCodeAttempt: jest.fn(),
+    };
     service = new PairingCodesService(pairings, limiter as unknown as PairingRateLimiter);
   });
 
   it('reserves an attempt before the lookup and gives it back for a right code', async () => {
     await expect(service.findPending('u1', '123456')).resolves.toMatchObject({ id: 'p1' });
     expect(limiter.reserveCodeAttempt).toHaveBeenCalledWith('u1');
-    expect(limiter.refundCodeAttempt).toHaveBeenCalledWith('u1');
+    expect(limiter.refundCodeAttempt).toHaveBeenCalledWith({ key: 'attempt-key' });
   });
 
   it('counts a wrong or expired code against the user and answers 404', async () => {

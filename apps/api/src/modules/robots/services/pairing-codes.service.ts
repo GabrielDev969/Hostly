@@ -12,11 +12,11 @@ export class PairingCodesService {
   ) {}
 
   async findPending(userId: string, code: string): Promise<RobotPairing> {
-    await this.limiter.reserveCodeAttempt(userId);
+    const attempt = await this.limiter.reserveCodeAttempt(userId);
     const pairing = await this.pairings.findPendingByCode(code, new Date());
     // Same answer for a wrong and an expired code; the reserved attempt stays counted.
     if (!pairing) throw new NotFoundException('Pairing code not found or expired');
-    await this.limiter.refundCodeAttempt(userId);
+    await this.limiter.refundCodeAttempt(attempt);
     return pairing;
   }
 }
