@@ -21,3 +21,7 @@ local.properties
 .idea/
 *.iml
 .DS_Store
+
+# Gerados no apps/web (pnpm generate / next build)
+apps/web/src/lib/api/schema.d.ts
+apps/web/next-env.d.ts

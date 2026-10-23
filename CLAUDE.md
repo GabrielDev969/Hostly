@@ -61,7 +61,7 @@ Pré-requisito: `nvm use` (Node 24.22.1, fixado no `.nvmrc`). O pnpm 12.15.0 vem
 | `pnpm typecheck` | `tsc` sem emitir |
 | `pnpm test` | Testes unitários (sem Docker) |
 | `pnpm test:e2e` | Testes e2e; os da API usam Testcontainers e precisam do Docker/OrbStack |
-| `pnpm format` / `pnpm format:check` | Prettier escreve / confere (ignora `*.md`, `apps/robot` e os JSON Schema gerados) |
+| `pnpm format` / `pnpm format:check` | Prettier escreve / confere (ignora `*.md`, `apps/robot` e os arquivos gerados: JSON Schema, `openapi.json` e os tipos do painel) |
 | `pnpm turbo run <tarefa> --filter <pacote>` | Roda uma tarefa num pacote só, ex.: `--filter @hostly/config` |
 | `pnpm --filter @hostly/contracts build` | Compila o pacote e regenera `packages/contracts/schemas/*.json` (o diff entra no commit) |
 | `pnpm --filter @hostly/contracts test` | Valida as fixtures contra os schemas (`node --test`, direto do `src`) |
@@ -70,6 +70,10 @@ Pré-requisito: `nvm use` (Node 24.22.1, fixado no `.nvmrc`). O pnpm 12.15.0 vem
 | `pnpm --filter @hostly/api dev` | Sobe só a API em watch (porta `API_PORT`; Swagger em `/docs`) |
 | `pnpm --filter @hostly/api db:migrate` | `prisma migrate dev`: cria e aplica migração em desenvolvimento |
 | `pnpm --filter @hostly/api db:deploy` | `prisma migrate deploy`: aplica as migrações pendentes |
+| `pnpm --filter @hostly/api openapi` | Regenera `apps/api/openapi.json` (o diff entra no commit); o `pnpm test` da API falha se ele estiver velho |
+| `pnpm --filter @hostly/web dev` | Sobe só o painel em watch (porta 3000, com webpack: o Turbopack do `next dev` 16.4.2 quebra no `next/font/google` deste repo; o `next build` usa Turbopack e passa); a API precisa estar de pé em `NEXT_PUBLIC_API_URL` |
+| `pnpm --filter @hostly/web generate` | Gera `apps/web/src/lib/api/schema.d.ts` a partir do `openapi.json` (o Turbo roda antes de dev, build, lint, typecheck e test; o git ignora) |
+| `pnpm --filter @hostly/web test` | Testes do painel (Vitest + Testing Library + MSW, sem API de verdade) |
 | `pnpm --filter @hostly/api fake-robot --serial <serial>` | Robô simulado: pareia com a API local (mostra o código; aprove no painel ou no Swagger), conecta no WebSocket, manda `hello` e telemetria e responde ping. `--telemetry-interval <s>` (padrão 10), `--close-after <s>` (fecha limpo) e `--vanish-after <s>` (para de responder sem fechar). Precisa do contracts compilado (`pnpm build`) e não grava o token em disco |
 | `pnpm --filter @hostly/api db:seed` | Seed idempotente: permissões, admin (`SUPER_ADMIN_*`), a operadora (`SEED_OPERATOR_*`) com o admin como `operator_admin` e o cliente interno dela (`SEED_INTERNAL_CLIENT_NAME`) |
 | `docker compose up -d --wait` | Sobe Postgres, Redis e SeaweedFS e espera ficarem saudáveis; o `storage-init` cria o bucket e o CORS logo depois |
@@ -85,8 +89,26 @@ NestJS). Dependência nova com script de build precisa entrar no `allowBuilds` d
 `pnpm install` falha.
 
 A API (`apps/api`) tem regras próprias em [`apps/api/CLAUDE.md`](apps/api/CLAUDE.md) e lê o `.env` da raiz. Ainda não
-existem: web e worker entram no `pnpm dev` quando nascerem (#19, #30); `apps/robot` é Gradle, fora do pnpm, e os
-comandos dele chegam na #23.
+existe: o worker entra no `pnpm dev` quando nascer (#30); `apps/robot` é Gradle, fora do pnpm, e os comandos dele chegam
+na #23.
+
+Painel (`apps/web`, `@hostly/web`): Next.js (App Router) + TanStack Query, lê o `.env` da raiz pelo `next.config.ts`.
+
+- Fala direto com a API (CORS com credentials), em `NEXT_PUBLIC_API_URL`. Painel e API ficam no mesmo site e em HTTPS
+  em produção, porque o cookie de refresh é `SameSite=Lax` e `secure`.
+- O access token fica só em memória (`src/lib/session/session-client.ts`): nunca em `localStorage`, `sessionStorage`,
+  URL ou log. As abas dividem um token pelo `BroadcastChannel` e renovam uma de cada vez no `navigator.locks`, porque a
+  API revoga todas as sessões do usuário quando o mesmo cookie de refresh volta duas vezes.
+- Cliente tipado: `openapi-fetch` com os tipos gerados do `apps/api/openapi.json`. Mudou rota ou DTO na API, rode
+  `pnpm --filter @hostly/api openapi` e commite o JSON.
+- O menu sai do escopo e das permissões efetivas de `GET /workspaces/:id/me` (`src/features/shell/menu.ts`), nunca do
+  nome do papel. É conforto: quem barra é a API. O cliente escolhido fica em `?client=` e as telas leem com
+  `useClientFilter()`.
+- Cores, fontes e medidas são CSS variables em `src/app/globals.css`, com os valores padrão da operadora; componente
+  nenhum usa hex nem nome de marca.
+- ESLint: `@next/eslint-plugin-next`, `react-hooks` e `jsx-a11y` direto no flat config. O `eslint-config-next` fica de
+  fora porque puxa plugins que não suportam o ESLint 10; os peers do `jsx-a11y` (ESLint 10) e do `openapi-typescript`
+  (TypeScript 6) estão liberados em `peerDependencyRules`, depois de provados.
 
 Contratos (`packages/contracts`, `@hostly/contracts`): schemas Zod dos formatos robô ↔ nuvem (`ws/*`, mais as constantes
 do socket: caminho, header de auth, intervalos e códigos de fechamento) e da família `live/*` (nuvem → painel: eventos e
@@ -111,7 +133,8 @@ constantes do canal ao vivo). Um nome por schema em `contractSchemas` (`src/regi
 e sem nenhum segredo (o `apps/api/test/env.ts` gera as chaves dos testes):
 
 - **`verify`**: `pnpm install --frozen-lockfile`, `format:check`, `lint`, `typecheck`, `build`, JSON Schema em dia
-  (falha se o build mudou ou criou algo em `packages/contracts/schemas`) e `test`.
+  (falha se o build mudou ou criou algo em `packages/contracts/schemas`) e `test` (que também falha se o
+  `apps/api/openapi.json` estiver velho). O build do painel baixa as fontes do Google Fonts (`next/font`).
 - **`e2e`**: `pnpm install --frozen-lockfile` e `test:e2e` (Testcontainers no Docker do runner), em paralelo ao `verify`.
 
 O ruleset `main` exige PR (sem aprovação, porque o dono trabalha sozinho) e os checks `verify` e `e2e` verdes, bloqueia

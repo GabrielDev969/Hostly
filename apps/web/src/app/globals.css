@@ -1,0 +1,106 @@
+/*
+ * Theme tokens. Values are the operator's default identity (spec, "Cara do projeto"); the brand
+ * profile (#27, #28) overrides colors and the heading font here, never in components.
+ */
+:root {
+  --color-primary: #1f6feb;
+  --color-primary-hover: #1558d6;
+  --color-on-primary: #ffffff;
+  --color-link: #1558d6;
+  --color-bg: #f4f7fc;
+  --color-surface: #ffffff;
+  --color-text: #0b1530;
+  --color-text-muted: #51607a;
+  --color-border: #dce4f2;
+  --color-danger: #b42318;
+  --color-danger-bg: #fef3f2;
+
+  --sidebar-bg: #0a1a3f;
+  --sidebar-item-active-bg: #13285c;
+  --sidebar-item-active-text: #ffffff;
+  --sidebar-text: #c9d6f0;
+  --sidebar-label: #8ea2c8;
+  --sidebar-border: #22386e;
+
+  --focus-ring-light: #1558d6;
+  --focus-ring-dark: #7cc4ff;
+
+  --font-heading: var(--font-sora), system-ui, sans-serif;
+  --font-body: var(--font-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --radius-item: 10px;
+  --radius-button: 12px;
+  --radius-card: 14px;
+
+  --sidebar-width: 220px;
+  --content-max-width: 1120px;
+  --content-padding-y: 32px;
+  --content-padding-x: 40px;
+  --card-padding: 20px;
+  --button-height: 44px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
+  margin: 0;
+}
+
+a {
+  color: var(--color-link);
+}
+
+code,
+kbd,
+samp {
+  font-family: var(--font-mono);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring-light);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

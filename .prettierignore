@@ -2,3 +2,5 @@ pnpm-lock.yaml
 **/*.md
 apps/robot
 packages/contracts/schemas
+apps/api/openapi.json
+apps/web/src/lib/api/schema.d.ts

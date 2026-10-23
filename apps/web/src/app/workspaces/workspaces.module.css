@@ -1,0 +1,19 @@
+.page {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--content-padding-y) 24px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.option {
+  width: 100%;
+  justify-content: flex-start;
+}
