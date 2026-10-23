@@ -162,6 +162,9 @@ describe('Robots and pairing (e2e)', () => {
     await startTestDatabase();
     const { createTestApp } = require('./helpers/test-app') as typeof import('./helpers/test-app');
     ({ app, emailDispatcher } = await createTestApp());
+    // One listening server: supertest otherwise opens a server per request, and bursts of
+    // simultaneous requests (the race tests) reset connections.
+    await app.listen(0);
     server = app.getHttpServer() as App;
     auth = app.get(RobotAuthService);
 
@@ -321,6 +324,25 @@ describe('Robots and pairing (e2e)', () => {
       expect((await approve(valid.code, siteA)).status).toBe(429);
       // Other users keep their own attempts.
       await as('opStaffX').post('/api/v1/robots/pairings/lookup', { code: valid.code }).expect(200);
+    });
+
+    it('counts simultaneous wrong codes atomically, so a burst gets no extra guesses', async () => {
+      await getPrisma().robotPairing.deleteMany();
+      const valid = await start('LB-E2E-0007');
+      const guesses = Array.from({ length: 20 }, (_, i) => String(i).padStart(6, '0')).filter(
+        (code) => code !== valid.code,
+      );
+
+      const statuses = await Promise.all(
+        guesses.map(async (code) => {
+          const res = await as('opStaffX').post('/api/v1/robots/pairings/lookup', { code });
+          return res.status;
+        }),
+      );
+
+      expect(statuses.filter((s) => s === 404)).toHaveLength(5);
+      expect(statuses.filter((s) => s === 429)).toHaveLength(guesses.length - 5);
+      await as('opStaffX').post('/api/v1/robots/pairings/lookup', { code: valid.code }).expect(429);
     });
 
     it('limits starts per IP and polls per pairing', async () => {

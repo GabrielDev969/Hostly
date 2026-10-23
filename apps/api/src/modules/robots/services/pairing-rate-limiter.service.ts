@@ -20,7 +20,6 @@ export const PAIRING_LIMITS = {
 
 export interface PairingRedis {
   eval(script: string, numKeys: number, key: string, windowMs: number): Promise<unknown>;
-  get(key: string): Promise<string | null>;
   set(key: string, value: string, mode: 'PX', ttlMs: number, flag: 'NX'): Promise<'OK' | null>;
   quit(): Promise<unknown>;
 }
@@ -30,6 +29,11 @@ const INCREMENT_IN_WINDOW = `
 local count = redis.call('INCR', KEYS[1])
 if count == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
 return count`;
+
+// Gives back a reserved attempt; a counter whose window already ended is left alone.
+export const REFUND_IN_WINDOW = `
+if redis.call('EXISTS', KEYS[1]) == 1 then return redis.call('DECR', KEYS[1]) end
+return 0`;
 
 const tooMany = () =>
   new HttpException('Too many pairing attempts; try again later', HttpStatus.TOO_MANY_REQUESTS);
@@ -48,20 +52,18 @@ export class PairingRateLimiter implements OnModuleDestroy {
     if (Number(count) > limit) throw tooMany();
   }
 
-  async assertCodeAttemptsLeft(userId: string): Promise<void> {
-    const count = await this.call(() => this.redis.get(this.wrongCodeKey(userId)));
-    if (Number(count ?? 0) >= PAIRING_LIMITS.wrongCodesPerUser.limit) throw tooMany();
+  // Every attempt takes a slot first, in one atomic step, so concurrent guesses cannot all slip
+  // past the check; a right code gives its slot back, so only wrong codes count.
+  async reserveCodeAttempt(userId: string): Promise<void> {
+    const { limit, windowMs } = PAIRING_LIMITS.wrongCodesPerUser;
+    const count = await this.call(() =>
+      this.redis.eval(INCREMENT_IN_WINDOW, 1, this.wrongCodeKey(userId), windowMs),
+    );
+    if (Number(count) > limit) throw tooMany();
   }
 
-  async recordWrongCode(userId: string): Promise<void> {
-    await this.call(() =>
-      this.redis.eval(
-        INCREMENT_IN_WINDOW,
-        1,
-        this.wrongCodeKey(userId),
-        PAIRING_LIMITS.wrongCodesPerUser.windowMs,
-      ),
-    );
+  async refundCodeAttempt(userId: string): Promise<void> {
+    await this.call(() => this.redis.eval(REFUND_IN_WINDOW, 1, this.wrongCodeKey(userId), 0));
   }
 
   async hitPoll(pollKeyHash: string): Promise<void> {
