@@ -35,6 +35,9 @@ CREATE TABLE "TelemetrySnapshot" (
 );
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Robot_id_organizationId_key" ON "Robot"("id", "organizationId");
+
+-- CreateIndex
 CREATE INDEX "TelemetrySnapshot_organizationId_idx" ON "TelemetrySnapshot"("organizationId");
 
 -- CreateIndex
@@ -53,7 +56,7 @@ ALTER TABLE "TelemetrySnapshot" ADD CONSTRAINT "TelemetrySnapshot_organizationId
 ALTER TABLE "TelemetrySnapshot" ADD CONSTRAINT "TelemetrySnapshot_clientId_organizationId_fkey" FOREIGN KEY ("clientId", "organizationId") REFERENCES "Client"("id", "organizationId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "TelemetrySnapshot" ADD CONSTRAINT "TelemetrySnapshot_robotId_fkey" FOREIGN KEY ("robotId") REFERENCES "Robot"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "TelemetrySnapshot" ADD CONSTRAINT "TelemetrySnapshot_robotId_organizationId_fkey" FOREIGN KEY ("robotId", "organizationId") REFERENCES "Robot"("id", "organizationId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 
 -- Battery is a percentage and the pose comes whole or not at all, on the last state and in the history.

@@ -20,6 +20,12 @@ import {
   type RobotTokenChange,
 } from '@modules/robots/services/robot-token-events.service';
 import { CryptoUtil } from '@shared/utils/crypto.util';
+import {
+  clientIp,
+  HandshakeLimiter,
+  SECRET_FORMAT,
+  SOCKET_CLOSE_TIMEOUT_MS,
+} from '@shared/websocket/handshake-guard';
 import { MESSAGES_PER_PING_INTERVAL, RobotConnection } from '../services/robot-connection';
 import { RobotConnectionRegistry } from '../services/robot-connection-registry';
 import type { RobotSession } from '../services/robot-scope.service';
@@ -29,6 +35,10 @@ import { TouchRobotUseCase } from '../use-cases/touch-robot.use-case';
 import { MarkRobotOfflineUseCase } from '../use-cases/mark-robot-offline.use-case';
 
 const BEARER = `${ROBOT_SOCKET_AUTH.scheme} `;
+// Sockets of one robot that may wait for their hello at the same time.
+const MAX_WAITING_FOR_HELLO = 2;
+// Unknown message types are logged, cut to this length.
+const LOGGED_TYPE_LENGTH = 64;
 
 function bearerToken(req: IncomingMessage): string | null {
   const header = req.headers[ROBOT_SOCKET_AUTH.header];
@@ -44,13 +54,18 @@ function textOf(data: RawData): string {
 
 // The robot's line to the cloud. The token is checked before the upgrade, so a refused robot gets HTTP 401 and
 // no socket; logs carry the robot id and close codes only, never the token or the request.
-@WebSocketGateway({ path: ROBOT_SOCKET_PATH, maxPayload: ROBOT_SOCKET_MAX_MESSAGE_BYTES })
+@WebSocketGateway({
+  path: ROBOT_SOCKET_PATH,
+  maxPayload: ROBOT_SOCKET_MAX_MESSAGE_BYTES,
+  closeTimeout: SOCKET_CLOSE_TIMEOUT_MS,
+})
 export class RobotLinkGateway
   implements OnGatewayInit<WebSocketServer>, OnGatewayConnection<WebSocket>, OnModuleDestroy
 {
   private readonly logger = new Logger('RobotLink');
   private readonly pendingSessions = new WeakMap<IncomingMessage, RobotSession>();
   private readonly connections = new Set<RobotConnection>();
+  private readonly handshakes = new HandshakeLimiter();
   // Presence writes of one robot run one after the other, so a close and a reconnect never cross in the database.
   private readonly writes = new Map<string, Promise<void>>();
   private tokenChanges?: Subscription;
@@ -70,7 +85,7 @@ export class RobotLinkGateway
     // Set here and not in the decorator, which has no access to the injected services.
     const verifyClient: VerifyClientCallbackAsync<IncomingMessage> = (info, done) => {
       this.verify(info.req).then(
-        (accepted) => (accepted ? done(true) : done(false, 401)),
+        (status) => (status === null ? done(true) : done(false, status)),
         () => done(false, 503),
       );
     };
@@ -82,6 +97,18 @@ export class RobotLinkGateway
     const session = this.pendingSessions.get(req);
     if (!session) {
       socket.terminate();
+      return;
+    }
+    const waiting = [...this.connections].filter(
+      (other) =>
+        other.session.robotId === session.robotId && other.hello !== 'accepted' && !other.closing,
+    );
+    if (waiting.length >= MAX_WAITING_FOR_HELLO) {
+      this.logger.warn({
+        msg: 'Too many robot sockets waiting for hello',
+        robotId: session.robotId,
+      });
+      socket.close(ROBOT_SOCKET_CLOSE.rateLimited, 'too many connections waiting for hello');
       return;
     }
     const connection = new RobotConnection(session, socket, {
@@ -104,14 +131,18 @@ export class RobotLinkGateway
     await Promise.all(this.writes.values());
   }
 
-  private async verify(req: IncomingMessage): Promise<boolean> {
+  // Null when accepted, otherwise the HTTP status of the refusal. The upgrade bypasses Express and its throttler,
+  // so a malformed token or an IP with too many refusals stops here, before the database is asked anything.
+  private async verify(req: IncomingMessage): Promise<number | null> {
+    const ip = clientIp(req, env.TRUST_PROXY);
+    if (this.handshakes.isBlocked(ip)) return 429;
     const token = bearerToken(req);
-    if (!token) return false;
+    if (!token || !SECRET_FORMAT.test(token)) return this.refuse(ip, 'malformed token');
     const deviceTokenHash = CryptoUtil.hashToken(token);
     const robot = await this.auth.authenticateHash(deviceTokenHash);
-    if (!robot) return false;
+    if (!robot) return this.refuse(ip, 'unknown token');
     const workspaceId = await this.auth.operatorWorkspaceId(robot.organizationId);
-    if (!workspaceId) return false;
+    if (!workspaceId) return this.refuse(ip, 'no operator workspace');
     this.pendingSessions.set(req, {
       robotId: robot.id,
       serial: robot.serial,
@@ -119,7 +150,15 @@ export class RobotLinkGateway
       workspaceId,
       deviceTokenHash,
     });
-    return true;
+    return null;
+  }
+
+  private refuse(ip: string, reason: string): number {
+    this.logger.warn({ msg: 'Robot socket refused', ip, reason });
+    if (this.handshakes.recordRefusal(ip)) {
+      this.logger.warn({ msg: 'Robot socket handshakes blocked for a while', ip });
+    }
+    return 401;
   }
 
   // Unknown types and broken messages are logged and dropped; the connection stays up.
@@ -138,7 +177,11 @@ export class RobotLinkGateway
     }
     const parsed = parseRobotMessage(raw);
     if (parsed.kind === 'unknown') {
-      this.logger.warn({ msg: 'Unknown robot message type', robotId, type: parsed.type });
+      this.logger.warn({
+        msg: 'Unknown robot message type',
+        robotId,
+        type: parsed.type.slice(0, LOGGED_TYPE_LENGTH),
+      });
       return;
     }
     if (parsed.kind === 'invalid') {
@@ -155,10 +198,11 @@ export class RobotLinkGateway
   private handle(connection: RobotConnection, message: RobotToCloudMessage): void {
     const session = connection.session;
     if (message.type === 'hello') {
-      if (!connection.helloReceived) this.onHello(connection, message.payload);
+      if (connection.hello === 'waiting') this.onHello(connection, message.payload);
       return;
     }
-    if (!connection.helloReceived) {
+    // Messages after a hello still being checked queue behind it and drop if it fails.
+    if (connection.hello === 'waiting') {
       this.logger.debug({ msg: 'Robot message before hello ignored', robotId: session.robotId });
       return;
     }
@@ -197,10 +241,23 @@ export class RobotLinkGateway
       connection.close(ROBOT_SOCKET_CLOSE.contractMismatch, 'contract version mismatch');
       return;
     }
-    connection.acceptHello();
-    const previous = this.registry.register(session.robotId, connection);
-    previous?.close(ROBOT_SOCKET_CLOSE.replaced, 'replaced by a newer connection');
-    this.write(connection, () => this.recordHello.execute(session, hello));
+    connection.beginHello();
+    // Only a socket whose token is still valid becomes the robot's connection and may replace another one.
+    this.serialize(session.robotId, async () => {
+      if (connection.closing) return;
+      const robot = await this.auth.authenticateHash(session.deviceTokenHash);
+      if (connection.closing) return;
+      if (!robot) {
+        connection.close(ROBOT_SOCKET_CLOSE.unauthorized, 'token no longer valid');
+        return;
+      }
+      connection.acceptHello();
+      const previous = this.registry.register(session.robotId, connection);
+      previous?.close(ROBOT_SOCKET_CLOSE.replaced, 'replaced by a newer connection');
+      if (!(await this.recordHello.execute(session, hello))) {
+        connection.close(ROBOT_SOCKET_CLOSE.unauthorized, 'token no longer valid');
+      }
+    });
   }
 
   private onClose(connection: RobotConnection, code: number): void {
@@ -225,9 +282,10 @@ export class RobotLinkGateway
     }
   }
 
-  // Runs a robot write; a token found invalid on the way closes the socket.
+  // Runs a robot write unless the socket is on its way out; a token found invalid on the way closes the socket.
   private write(connection: RobotConnection, task: () => Promise<boolean>): void {
     this.serialize(connection.session.robotId, async () => {
+      if (connection.closing || connection.hello !== 'accepted') return;
       if (!(await task())) {
         connection.close(ROBOT_SOCKET_CLOSE.unauthorized, 'token no longer valid');
       }

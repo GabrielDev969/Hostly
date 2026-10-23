@@ -83,4 +83,25 @@ describe('RobotConnection', () => {
     expect(connection.admit()).toBe(false);
     expect(socket.close).toHaveBeenCalledWith(ROBOT_SOCKET_CLOSE.rateLimited, 'too many messages');
   });
+
+  it('admits nothing once the cloud started closing or dropped the socket', () => {
+    connection.close(ROBOT_SOCKET_CLOSE.unauthorized, 'token no longer valid');
+    expect(connection.closing).toBe(true);
+    expect(connection.admit()).toBe(false);
+  });
+
+  it('marks the connection closing when the heartbeat drops it', () => {
+    connection.acceptHello();
+    jest.advanceTimersByTime(30_000 * 4);
+    expect(socket.terminate).toHaveBeenCalled();
+    expect(connection.admit()).toBe(false);
+  });
+
+  it('tracks the hello from waiting to pending to accepted', () => {
+    expect(connection.hello).toBe('waiting');
+    connection.beginHello();
+    expect(connection.hello).toBe('pending');
+    connection.acceptHello();
+    expect(connection.hello).toBe('accepted');
+  });
 });

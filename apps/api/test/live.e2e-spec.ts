@@ -1,6 +1,7 @@
 import Redis from 'ioredis';
 import { LIVE_SOCKET_CLOSE, LIVE_SOCKET_PATH, type LiveEvent } from '@hostly/contracts';
 import { CryptoUtil } from '../src/shared/utils/crypto.util';
+import { RedeemLiveTicketUseCase } from '../src/modules/live/use-cases/redeem-live-ticket.use-case';
 import { LIVE_TICKET_PREFIX } from '../src/modules/live/services/live-ticket-store';
 import { getPrisma, stopTestDatabase } from './helpers/test-database';
 import { resetPairingLimits } from './helpers/pairing-limits';
@@ -68,7 +69,7 @@ describe('Live channel for the panel (e2e)', () => {
     );
 
   beforeAll(async () => {
-    fleet = await setupFleet();
+    fleet = await setupFleet(output.stream);
     redis = new Redis({ host: process.env.REDIS_HOST, port: Number(process.env.REDIS_PORT) });
   });
 
@@ -219,14 +220,36 @@ describe('Live channel for the panel (e2e)', () => {
       ).resolves.toBe('HTTP 403');
     });
 
+    it('refuses a malformed ticket without asking Redis', async () => {
+      const redeem = jest.spyOn(fleet.app.get(RedeemLiveTicketUseCase), 'execute');
+      await expect(refused(openLive(fleet.api, 'not-a-ticket'))).resolves.toBe('HTTP 401');
+      expect(redeem).not.toHaveBeenCalled();
+      redeem.mockRestore();
+    });
+
+    it('closes with 1008 when the panel sends anything', async () => {
+      const client = await watch('operator');
+      client.send('hello?');
+      await expect(client.closed).resolves.toBe(1008);
+    });
+
+    it('allows at most five sockets per user', async () => {
+      for (let i = 0; i < 5; i += 1) await watch('clientB');
+      await expect(refused(openLive(fleet.api, await ticket('clientB')))).resolves.toBe('HTTP 429');
+    });
+
     it('closes the socket at the end of its lifetime', async () => {
       const client = await watch('operator');
       await expect(client.closed).resolves.toBe(LIVE_SOCKET_CLOSE.expired);
     });
   });
 
-  it('never writes a ticket or a device token to the logs', () => {
+  it('never writes a ticket or a device token to the logs, pino included', () => {
     const printed = output.text();
+    // The capture really holds the app's pino output: socket logs and HTTP request logs.
+    expect(printed).toContain('"msg":"Live socket refused"');
+    expect(printed).toContain('"msg":"Robot socket closed"');
+    expect(printed).toMatch(/"msg":"POST \/api\/v1\/\S+ 20\d \d+ms"/);
     expect(secrets.length).toBeGreaterThan(5);
     for (const secret of secrets) expect(printed).not.toContain(secret);
   });

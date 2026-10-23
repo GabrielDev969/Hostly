@@ -297,6 +297,8 @@ model Robot {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Target of TelemetrySnapshot's composite foreign key.
+  @@unique([id, organizationId])
   @@index([organizationId])
   @@index([clientId])
   @@index([siteId])
@@ -321,7 +323,8 @@ model TelemetrySnapshot {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   client       Client       @relation(fields: [clientId, organizationId], references: [id, organizationId], onDelete: Restrict)
-  robot        Robot        @relation(fields: [robotId], references: [id], onDelete: Restrict)
+  // Composite, so a history row can never point to another organization's robot.
+  robot        Robot        @relation(fields: [robotId, organizationId], references: [id, organizationId], onDelete: Restrict)
 
   @@index([organizationId])
   @@index([clientId])

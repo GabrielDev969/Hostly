@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { AddressInfo } from 'net';
+import { Writable } from 'stream';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import WebSocket from 'ws';
@@ -50,6 +51,7 @@ export async function waitFor<T>(
 export interface LiveClient {
   readonly events: LiveEvent[];
   readonly closed: Promise<number>;
+  send(data: string): void;
   close(): void;
 }
 
@@ -80,7 +82,12 @@ export function openLive(
     socket.on('error', reject);
     socket.once('open', () => {
       if (socket.protocol !== LIVE_SOCKET_PROTOCOL) reject(new Error('protocol not selected'));
-      resolve({ events, closed, close: () => socket.close(1000) });
+      resolve({
+        events,
+        closed,
+        send: (data) => socket.send(data),
+        close: () => socket.close(1000),
+      });
     });
   });
 }
@@ -104,10 +111,10 @@ export interface Fleet {
 }
 
 // An operator with clients A and B (one site each), a user per client, an advertiser of A, and a listening app.
-export async function setupFleet(): Promise<Fleet> {
+export async function setupFleet(logs?: Writable): Promise<Fleet> {
   await startTestDatabase();
   const { createTestApp } = require('./test-app') as typeof import('./test-app');
-  const { app, emailDispatcher } = await createTestApp();
+  const { app, emailDispatcher } = await createTestApp({ logs });
   await app.listen(0);
   const server = app.getHttpServer() as App;
   const { port } = (app.getHttpServer() as { address(): AddressInfo }).address();
@@ -208,17 +215,25 @@ export async function setupFleet(): Promise<Fleet> {
   };
 }
 
-// Everything the app prints while a suite runs, to prove no secret reaches the logs.
-export function captureOutput(): { text: () => string; restore: () => void } {
+// Everything the app logs (pino, at trace level, through the app's own config) and prints while a suite runs,
+// to prove no secret reaches the logs.
+export function captureOutput(): { stream: Writable; text: () => string; restore: () => void } {
   const chunks: string[] = [];
-  const spies = [process.stdout, process.stderr].map((stream) => {
-    const write = stream.write.bind(stream) as (...args: unknown[]) => boolean;
-    return jest.spyOn(stream, 'write').mockImplementation((...args: unknown[]) => {
+  const stream = new Writable({
+    write(chunk: Buffer, _encoding, callback) {
+      chunks.push(chunk.toString('utf8'));
+      callback();
+    },
+  });
+  const spies = [process.stdout, process.stderr].map((out) => {
+    const write = out.write.bind(out) as (...args: unknown[]) => boolean;
+    return jest.spyOn(out, 'write').mockImplementation((...args: unknown[]) => {
       chunks.push(String(args[0]));
       return write(...args);
     });
   });
   return {
+    stream,
     text: () => chunks.join(''),
     restore: () => spies.forEach((spy) => spy.mockRestore()),
   };

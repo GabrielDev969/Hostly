@@ -19,9 +19,16 @@ export interface RobotConnectionOptions {
 
 export const MESSAGES_PER_PING_INTERVAL = 20;
 
+// waiting: nothing yet; pending: a hello arrived and its token is being checked again; accepted: the robot's
+// connection of record.
+export type HelloState = 'waiting' | 'pending' | 'accepted';
+
 // The timers of one robot socket: the hello deadline, the ping/pong heartbeat and the message limit.
 export class RobotConnection {
-  helloReceived = false;
+  hello: HelloState = 'waiting';
+  // Set once the cloud closes or drops the socket. ws still delivers messages while a close handshake is in
+  // flight, and none of them may touch the robot's state.
+  closing = false;
   private pendingPingId: string | null = null;
   private missed = 0;
   private received = 0;
@@ -43,16 +50,21 @@ export class RobotConnection {
     this.windowTimer = setInterval(() => (this.received = 0), this.options.pingIntervalMs);
   }
 
-  // Counts one message; false (and the socket closes) once the interval is over the limit.
+  // Counts one message; false when the socket is closing or (and then it closes) over the limit.
   admit(): boolean {
+    if (this.closing) return false;
     this.received += 1;
     if (this.received <= this.options.messagesPerInterval) return true;
     this.close(ROBOT_SOCKET_CLOSE.rateLimited, 'too many messages');
     return false;
   }
 
+  beginHello(): void {
+    this.hello = 'pending';
+  }
+
   acceptHello(): void {
-    this.helloReceived = true;
+    this.hello = 'accepted';
     clearTimeout(this.helloTimer);
     this.pingTimer = setInterval(() => this.heartbeat(), this.options.pingIntervalMs);
   }
@@ -70,6 +82,7 @@ export class RobotConnection {
   }
 
   close(code: number, reason: string): void {
+    this.closing = true;
     this.stop();
     this.socket.close(code, reason);
   }
@@ -85,6 +98,7 @@ export class RobotConnection {
     if (this.pendingPingId) {
       this.missed += 1;
       if (this.missed >= this.options.missedPings) {
+        this.closing = true;
         this.stop();
         this.socket.terminate();
         return;

@@ -1,5 +1,8 @@
+import { randomBytes } from 'crypto';
+import type { Socket } from 'net';
 import WebSocket from 'ws';
-import { ROBOT_SOCKET_CLOSE } from '@hostly/contracts';
+import { CONTRACT_VERSION, ROBOT_SOCKET_CLOSE } from '@hostly/contracts';
+import { RobotAuthService } from '../src/modules/robots/services/robot-auth.service';
 import { getPrisma, stopTestDatabase } from './helpers/test-database';
 import { resetPairingLimits } from './helpers/pairing-limits';
 import { captureOutput, openLive, setupFleet, waitFor, type Fleet } from './helpers/fleet';
@@ -70,7 +73,7 @@ describe('Robot socket (e2e)', () => {
   const online = (id: string) => robotRow(id).then((row) => row.online);
 
   beforeAll(async () => {
-    fleet = await setupFleet();
+    fleet = await setupFleet(output.stream);
   });
 
   beforeEach(async () => {
@@ -286,6 +289,9 @@ describe('Robot socket (e2e)', () => {
         JSON.stringify({ type: 'battery.health', sentAt: new Date().toISOString(), payload: {} }),
       );
       link.sendRaw(
+        JSON.stringify({ type: 'y'.repeat(500), sentAt: new Date().toISOString(), payload: {} }),
+      );
+      link.sendRaw(
         JSON.stringify({
           type: 'telemetry',
           sentAt: new Date().toISOString(),
@@ -298,6 +304,9 @@ describe('Robot socket (e2e)', () => {
         () => getPrisma().telemetrySnapshot.count({ where: { robotId: robot.robotId } }),
         'valid telemetry after broken ones',
       );
+      // An unknown type is logged cut short.
+      await waitFor(() => output.text().includes('y'.repeat(64)), 'unknown type in the log');
+      expect(output.text()).not.toContain('y'.repeat(65));
       expect(await online(robot.robotId)).toBe(true);
     });
 
@@ -340,8 +349,99 @@ describe('Robot socket (e2e)', () => {
     });
   });
 
-  it('never writes a device token to the logs', () => {
+  describe('stale sockets and handshake abuse', () => {
+    it('ignores a hello sent by a socket the cloud is closing and keeps the legitimate connection', async () => {
+      const robot = await pair();
+      const old = new WebSocket(socketUrl(fleet.api), {
+        headers: { authorization: `Bearer ${robot.deviceToken}` },
+      });
+      await new Promise((resolve, reject) => {
+        old.once('open', resolve);
+        old.once('error', reject);
+      });
+      // The old client stops reading: it never sees the cloud's close frame, so its side stays open.
+      const transport = (old as unknown as { _socket: Socket })._socket;
+      transport.pause();
+
+      const again = await fleet.pair(robot.serial, fleet.siteA);
+      secrets.push(again.deviceToken);
+      const current = await connect({ ...again, serial: robot.serial });
+      let currentClosed = false;
+      void current.closed.then(() => (currentClosed = true));
+      await waitFor(() => online(robot.robotId), 'robot online with the new token');
+
+      const oldClosed = new Promise((resolve) => old.once('close', resolve));
+      old.send(
+        JSON.stringify({
+          type: 'hello',
+          sentAt: new Date().toISOString(),
+          payload: {
+            serial: robot.serial,
+            appVersion: 'old',
+            romVersion: 'old',
+            manifestVersion: null,
+            contractVersion: CONTRACT_VERSION,
+          },
+        }),
+      );
+      transport.resume();
+      await oldClosed;
+
+      // A full ping round after the old socket is gone: the current one is still the robot's connection.
+      const pings = current.received.filter((m) => m.type === 'ping').length;
+      await waitFor(
+        () => current.received.filter((m) => m.type === 'ping').length > pings,
+        'a ping after the old socket closed',
+      );
+      expect(currentClosed).toBe(false);
+      await expect(robotRow(robot.robotId)).resolves.toMatchObject({
+        online: true,
+        appVersion: '0.1.0-fake',
+      });
+    });
+
+    it('lets at most two sockets of a robot wait for their hello', async () => {
+      const robot = await pair();
+      await connect(robot, { hello: false });
+      await connect(robot, { hello: false });
+      const third = await connect(robot, { hello: false });
+
+      await expect(third.closed).resolves.toMatchObject({ code: ROBOT_SOCKET_CLOSE.rateLimited });
+    });
+
+    // Last in the suite: it leaves 127.0.0.1 blocked for the rest of the window.
+    it('refuses a burst of bad handshakes without asking the database', async () => {
+      const robot = await pair();
+      const lookups = jest.spyOn(fleet.app.get(RobotAuthService), 'authenticateHash');
+      const url = socketUrl(fleet.api);
+
+      await expect(refusal(url, { authorization: 'Bearer not-hex' })).resolves.toBe(401);
+      expect(lookups).not.toHaveBeenCalled();
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 30; i += 1) {
+        const token = randomBytes(32).toString('hex');
+        statuses.push(await refusal(url, { authorization: `Bearer ${token}` }));
+      }
+      const firstBlocked = statuses.indexOf(429);
+      expect(firstBlocked).toBeGreaterThan(0);
+      expect(statuses.slice(0, firstBlocked).every((status) => status === 401)).toBe(true);
+      expect(statuses.slice(firstBlocked).every((status) => status === 429)).toBe(true);
+      expect(lookups).toHaveBeenCalledTimes(firstBlocked);
+
+      // Blocked means blocked, even with a valid token, until the window ends.
+      await expect(connect(robot)).rejects.toEqual(new SocketRefusedError(429));
+      expect(lookups).toHaveBeenCalledTimes(firstBlocked);
+      lookups.mockRestore();
+    });
+  });
+
+  it('never writes a device token to the logs, pino included', () => {
     const printed = output.text();
+    // The capture really holds the app's pino output: socket logs and HTTP request logs.
+    expect(printed).toContain('"msg":"Robot socket closed"');
+    expect(printed).toContain('"msg":"Robot socket refused"');
+    expect(printed).toMatch(/"msg":"POST \/api\/v1\/\S+ 20\d \d+ms"/);
     expect(secrets.length).toBeGreaterThan(5);
     for (const secret of secrets) expect(printed).not.toContain(secret);
   });
