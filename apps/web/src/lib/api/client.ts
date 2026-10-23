@@ -28,6 +28,15 @@ export async function unwrapEmpty(
   throw toError(error, response);
 }
 
+// For routes whose body the OpenAPI document leaves out: the caller validates what came back.
+export async function unwrapUntyped(
+  call: Promise<{ data?: unknown; error?: unknown; response: Response }>,
+): Promise<unknown> {
+  const { data, error, response } = await call;
+  if (response.ok) return data;
+  throw toError(error, response);
+}
+
 function toError(error: unknown, response: Response): ApiError {
   const message =
     typeof error === 'object' &&

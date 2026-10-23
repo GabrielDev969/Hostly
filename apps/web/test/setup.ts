@@ -19,6 +19,8 @@ afterEach(() => {
   cleanup();
   server.resetHandlers();
   resetNavigation();
+  // The token pages read and rewrite the real address bar.
+  window.history.replaceState(null, '', '/');
   localStorage.clear();
   sessionStorage.clear();
 });

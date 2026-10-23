@@ -164,3 +164,80 @@ describe('login', () => {
     expect(screen.queryByLabelText('Senha')).not.toBeInTheDocument();
   });
 });
+
+describe('forgot password', () => {
+  // The API answers 204 for any e-mail; only it knows which ones have an account.
+  function forgotApi(status = 204) {
+    loginApi();
+    const asked: string[] = [];
+    server.use(
+      http.post(`${API}/api/v1/auth/forgot-password`, async ({ request }) => {
+        asked.push(((await request.json()) as { email: string }).email);
+        return status === 204
+          ? new HttpResponse(null, { status })
+          : HttpResponse.json({ message: 'Refused' }, { status });
+      }),
+    );
+    return asked;
+  }
+
+  async function askReset(email: string) {
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Esqueci a senha' }));
+    await user.type(screen.getByLabelText('E-mail'), email);
+    await user.click(screen.getByRole('button', { name: 'Enviar link' }));
+  }
+
+  it('answers the same for an e-mail with an account and one without', async () => {
+    const asked = forgotApi();
+    const screens: string[] = [];
+    for (const email of ['ana@example.com', 'ninguem@example.com']) {
+      const { container, unmount } = renderWithSession(<LoginPage />);
+      await askReset(email);
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Se houver uma conta com esse e-mail, enviamos um link para redefinir a senha.',
+      );
+      screens.push(container.innerHTML);
+      unmount();
+    }
+
+    expect(asked).toEqual(['ana@example.com', 'ninguem@example.com']);
+    expect(screens[0]).toBe(screens[1]);
+  });
+
+  it.each([
+    [400, 'Confira o e-mail.'],
+    [429, 'Muitas tentativas. Aguarde um pouco e tente de novo.'],
+  ])('explains a %i', async (status, message) => {
+    forgotApi(status);
+    renderWithSession(<LoginPage />);
+
+    await askReset('ana@example.com');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+  });
+
+  it('opens on this step from a link that asks for another reset', async () => {
+    forgotApi();
+    setLocation('/login?forgot=1');
+    renderWithSession(<LoginPage />);
+
+    expect(await screen.findByRole('heading', { name: 'Esqueci a senha' })).toBeInTheDocument();
+  });
+
+  it('asks to confirm the e-mail when the login refuses an unverified account', async () => {
+    loginApi();
+    server.use(
+      http.post(`${API}/api/v1/auth/login`, () =>
+        HttpResponse.json({ message: 'Email not verified' }, { status: 403 }),
+      ),
+    );
+    renderWithSession(<LoginPage />);
+
+    await signIn();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Confirme seu e-mail pelo link que enviamos antes de entrar.',
+    );
+  });
+});
