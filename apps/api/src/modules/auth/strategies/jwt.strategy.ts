@@ -51,8 +51,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     const invalidatedAt = await this.users.findTokensInvalidatedAt(payload.sub);
-    // A token from the same millisecond as the invalidation cannot be ordered, so it fails closed.
-    if (invalidatedAt && payload.iatMs <= invalidatedAt.getTime()) {
+    // A token from the same millisecond as the invalidation cannot be ordered, so it fails closed; so does a value
+    // that is not a valid Date, since comparing against NaN would let the token through.
+    if (
+      invalidatedAt &&
+      !(invalidatedAt instanceof Date && payload.iatMs > invalidatedAt.getTime())
+    ) {
       throw new UnauthorizedException('Token has been invalidated');
     }
 
