@@ -1,0 +1,17 @@
+{
+  "mapName": "shopping-piso-1",
+  "points": [
+    {
+      "name": "Entrada",
+      "x": 0.0,
+      "y": 0.0,
+      "theta": 0.0
+    },
+    {
+      "name": "Praça de alimentação",
+      "x": 24.8,
+      "y": -6.35,
+      "theta": -2.886187
+    }
+  ]
+}

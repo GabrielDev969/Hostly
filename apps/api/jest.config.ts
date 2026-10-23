@@ -6,11 +6,14 @@ const config: Config = {
   testEnvironment: 'node',
   moduleFileExtensions: ['js', 'json', 'ts'],
   transform: {
+    'packages/contracts/src/.+\\.ts$': '<rootDir>/../test/transformers/esm-source.mjs',
     '^.+\\.(t|j)s$': 'ts-jest',
   },
   setupFiles: ['<rootDir>/../test/env.ts'],
   moduleNameMapper: {
     '^nanoid$': '<rootDir>/../test/stubs/nanoid.ts',
+    // Jest cannot require ESM, so it loads the package source instead of dist.
+    '^@hostly/contracts$': '<rootDir>/../../../packages/contracts/src/index.ts',
     '^@core/(.*)$': '<rootDir>/core/$1',
     '^@modules/(.*)$': '<rootDir>/modules/$1',
     '^@shared/(.*)$': '<rootDir>/shared/$1',
