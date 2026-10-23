@@ -48,8 +48,11 @@ describe('CreateWorkspaceUseCase', () => {
     const byName = new Map(arg.defaultRoles.map((r) => [r.name, r.permissionKeys]));
     expect(byName.get('operator_admin')).not.toContain('workspace:delete');
     expect(byName.get('operator_admin')).toContain('role:assign');
+    // Staff installs robots (pair, rename, move); everything else outside operator_admin only reads.
+    const installs = ['robot:pair', 'robot:update', 'robot:move'];
     for (const role of ['operator_staff', 'client_admin', 'client_editor', 'advertiser']) {
-      expect(byName.get(role)!.every((k) => k.endsWith(':read'))).toBe(true);
+      const writes = byName.get(role)!.filter((k) => !k.endsWith(':read'));
+      expect(writes).toEqual(role === 'operator_staff' ? installs : []);
       expect(byName.get(role)).not.toContain('workspace:invite');
     }
     expect(byName.get('client_editor')).not.toContain('audit:read');

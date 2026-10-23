@@ -53,6 +53,13 @@ export const SCOPED_MODELS: Readonly<Partial<Record<string, ScopedModel>>> = {
     clientField: 'clientId',
     advertiserField: null,
   },
+  // No advertiserField: advertisers never see robots.
+  Robot: {
+    organizationWhere: (scope) => ({ organizationId: scope.organizationId }),
+    organizationData: (scope) => ({ organizationId: scope.organizationId }),
+    clientField: 'clientId',
+    advertiserField: null,
+  },
   Invitation: {
     organizationWhere: (scope) => ({ workspace: { organizationId: scope.organizationId } }),
     organizationData: (scope) => ({ workspaceId: scope.workspaceId }),

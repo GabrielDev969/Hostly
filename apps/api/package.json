@@ -15,7 +15,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "env:keys": "ts-node scripts/env-keys.ts"
+    "env:keys": "ts-node scripts/env-keys.ts",
+    "fake-robot": "ts-node scripts/fake-robot/main.ts"
   },
   "dependencies": {
     "@hostly/contracts": "workspace:*",

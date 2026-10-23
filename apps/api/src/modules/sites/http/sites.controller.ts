@@ -29,6 +29,7 @@ import { PermissionsGuard } from '@shared/guards/permissions.guard';
 import { WorkspaceGuard } from '@shared/guards/workspace.guard';
 import {
   ApiAuthErrors,
+  ApiConflictError,
   ApiNotFoundError,
   ApiServerError,
   ApiValidationError,
@@ -127,6 +128,7 @@ export class SitesController {
   @ApiResponse({ status: 204, description: 'Site deleted' })
   @ApiAuthErrors()
   @ApiNotFoundError('Site')
+  @ApiConflictError('The site still has robots')
   @ApiServerError()
   async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     await this.deleteSite.execute(id);
