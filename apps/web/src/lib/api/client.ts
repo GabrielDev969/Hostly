@@ -16,6 +16,19 @@ export async function unwrap<T>(
 ): Promise<T> {
   const { data, error, response } = await call;
   if (response.ok && data !== undefined) return data;
+  throw toError(error, response);
+}
+
+// For routes that answer with no body (204, or 200 with nothing in it), where openapi-fetch gives no data.
+export async function unwrapEmpty(
+  call: Promise<{ error?: unknown; response: Response }>,
+): Promise<void> {
+  const { error, response } = await call;
+  if (response.ok) return;
+  throw toError(error, response);
+}
+
+function toError(error: unknown, response: Response): ApiError {
   const message =
     typeof error === 'object' &&
     error !== null &&
@@ -23,5 +36,5 @@ export async function unwrap<T>(
     typeof error.message === 'string'
       ? error.message
       : response.statusText;
-  throw new ApiError(response.status, message);
+  return new ApiError(response.status, message);
 }
