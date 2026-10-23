@@ -15,6 +15,7 @@ describe('GetRobotTelemetryUseCase', () => {
       findById: jest.fn().mockResolvedValue({ id: 'r1' }),
       findBySerial: jest.fn(),
       update: jest.fn(),
+      moveToSite: jest.fn(),
       revoke: jest.fn(),
       findActiveByTokenHash: jest.fn(),
     };
