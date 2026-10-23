@@ -94,8 +94,8 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
 `client_admin`, `client_editor`, `advertiser`).
 
 - `PERMISSION_CEILING`: teto de permissões por tipo de membership (operadora: qualquer; cliente: `workspace:read`,
-  `audit:read`, `client:read` e `site:read`; anunciante: `workspace:read`). `assertRoleFitsScope` vale pra papel de
-  sistema e customizado em toda atribuição (convite, `POST /users`, troca de papel, posse) e ao editar um papel que já
+  `audit:read`, `client:read`, `site:read` e `robot:read`; anunciante: `workspace:read`). `assertRoleFitsScope` vale
+  pra papel de sistema e customizado em toda atribuição (convite, `POST /users`, troca de papel, posse) e ao editar um papel que já
   está em uso. Em toda
   requisição, o `PermissionsGuard` e o `@CurrentPermissions` cortam as permissões do papel pelo teto do escopo
   (`withinCeiling`); sem `req.scope`, nenhuma permissão. O `permissions.guard.spec.ts` falha se uma rota com
@@ -117,6 +117,13 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   `Site` e `Invitation` não têm `advertiserField`, então o anunciante leva 403 neles. O convite só leva `clientId`
   (papel de cliente) quando quem convida é a operadora; o cliente interno de cada organização (robôs próprios) nasce
   com ela e o banco o mantém único, ativo e não apagado.
+- `Robot` também não tem `advertiserField`; o `clientId` acompanha o local (FK composta `(siteId, clientId,
+  organizationId)` pro `Site`), e mover troca os dois. `RobotPairing` fica fora do `SCOPED_MODELS` porque nasce antes
+  de o robô ter dono (sem coluna de tenant); a aprovação o liga a um `Robot` pelo `robotId`. O robô, sem escopo, só
+  passa por `runAsSystem` na entrega do token e no `RobotAuthService` (token → robô ativo).
+- Limites do pareamento (`PairingRateLimiter`) ficam no Redis de verdade, inclusive nos testes (o `@nestjs/throttler`
+  é desligado em `NODE_ENV=test`); sem Redis, o pareamento falha fechado (503). O e2e zera as chaves com
+  `resetPairingLimits()`.
 - **Tabela de negócio nova** entra em `SCOPED_MODELS` (`src/shared/tenancy/scoped-models.ts`). O
   `tenant-scope.registry.spec.ts` falha se um modelo com `organizationId`/`clientId`/`advertiserId` ficar de fora, se um
   arquivo usar modelo escopado por client cru (`PrismaService`, `PrismaClient` ou `Prisma.TransactionClient`; por ponto,

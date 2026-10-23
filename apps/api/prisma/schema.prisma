@@ -95,6 +95,7 @@ model Organization {
   auditLogs  AuditLog[]
   clients    Client[]
   sites      Site[]
+  robots     Robot[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -217,14 +218,81 @@ model Site {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   client       Client       @relation(fields: [clientId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  robots       Robot[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
+  // Target of Robot's composite foreign key, so a robot's client and organization always match its site.
+  @@unique([id, clientId, organizationId])
   @@index([organizationId])
   @@index([clientId])
   @@index([deletedAt])
+}
+
+enum RobotModel {
+  luckibot_plus
+}
+
+enum RobotStatus {
+  pending
+  active
+  revoked
+}
+
+model Robot {
+  id              String      @id @default(uuid())
+  organizationId  String
+  clientId        String
+  siteId          String
+  // Unique across organizations: a robot belongs to one operator at a time.
+  serial          String      @unique
+  model           RobotModel  @default(luckibot_plus)
+  name            String
+  // Reported by the robot once it connects; null until then.
+  romVersion      String?
+  appVersion      String?
+  status          RobotStatus @default(pending)
+  // sha256 of the device token. Set only while active: enforced by a CHECK in the migration SQL.
+  deviceTokenHash String?     @unique
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  site         Site           @relation(fields: [siteId, clientId, organizationId], references: [id, clientId, organizationId], onDelete: Restrict)
+  pairings     RobotPairing[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([clientId])
+  @@index([siteId])
+}
+
+enum RobotPairingStatus {
+  pending
+  approved
+}
+
+// A pairing starts before the robot has an owner, so it carries no tenant column; approval links it
+// to a Robot. Delivered pairings are deleted and expired ones are cleared on the next start.
+model RobotPairing {
+  id          String             @id @default(uuid())
+  // sha256 of the pairingId handed to the robot, which is its polling secret.
+  pollKeyHash String             @unique
+  serial      String
+  code        String             @unique
+  status      RobotPairingStatus @default(pending)
+  // Set exactly when approved: enforced by a CHECK in the migration SQL.
+  robotId     String?
+  expiresAt   DateTime
+
+  robot Robot? @relation(fields: [robotId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@index([robotId])
 }
 
 model Role {

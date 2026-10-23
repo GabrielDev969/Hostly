@@ -21,5 +21,6 @@ import { DeleteSiteUseCase } from './use-cases/delete-site.use-case';
     UpdateSiteUseCase,
     DeleteSiteUseCase,
   ],
+  exports: [SitesRepository],
 })
 export class SitesModule {}

@@ -15,9 +15,10 @@ type AuditRequest = Request & {
 // rather than allowlist because we want to keep most request shape visible
 // for forensics; but the cost of a missed credential is far higher than a
 // missed audit field. Anchored substrings so e.g. `clientSecret`, `apiKey`,
-// `newPassword`, `cvvCode`, `userCpf` are all matched.
+// `newPassword`, `cvvCode`, `userCpf` are all matched. `code` covers TOTP,
+// recovery and robot pairing codes; `pairing` covers the robot's pairingId.
 const SENSITIVE_FIELD_PATTERN =
-  /(pass|secret|token|key|credential|auth|cookie|cvv|pin|otp|hash|salt|nonce|ssn|cpf|cnpj|rg|birth|dob|phone|address|card)/i;
+  /(pass|secret|token|key|credential|auth|cookie|cvv|pin|otp|hash|salt|nonce|ssn|cpf|cnpj|rg|birth|dob|phone|address|card|code|pairing)/i;
 
 const MAX_VALUE_LENGTH = 200;
 const TRUNCATION_SUFFIX = '...[truncated]';

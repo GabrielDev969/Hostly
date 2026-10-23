@@ -47,6 +47,39 @@ describe('Hostly roles', () => {
     expect(() => assertRoleFitsScope(systemRole(name), membership)).toThrow(BadRequestException);
   });
 
+  describe('robot permissions of the system roles', () => {
+    const keys = (name: string) =>
+      systemRole(name)
+        .permissions.map((p) => p.key)
+        .filter((key) => key.startsWith('robot:'))
+        .sort();
+
+    it('gives every robot permission to operator_admin', () => {
+      expect(keys('operator_admin')).toEqual([
+        'robot:move',
+        'robot:pair',
+        'robot:read',
+        'robot:revoke',
+        'robot:update',
+      ]);
+    });
+
+    it('lets operator_staff install robots but not revoke them', () => {
+      expect(keys('operator_staff')).toEqual([
+        'robot:move',
+        'robot:pair',
+        'robot:read',
+        'robot:update',
+      ]);
+    });
+
+    it('lets client roles only read robots, and gives advertisers none', () => {
+      expect(keys('client_admin')).toEqual(['robot:read']);
+      expect(keys('client_editor')).toEqual(['robot:read']);
+      expect(keys('advertiser')).toEqual([]);
+    });
+  });
+
   describe('permission ceiling for custom roles', () => {
     it('lets a custom role within the ceiling go to client and advertiser memberships', () => {
       expect(() =>
@@ -73,9 +106,19 @@ describe('Hostly roles', () => {
       }
     });
 
-    it.each([['client:read'], ['site:read']])('keeps %s away from advertisers', (key) => {
-      expect(() => assertRoleFitsScope(customRole(key), advertiser)).toThrow(BadRequestException);
+    it('lets client memberships read their robots, but never pair, rename, move or revoke them', () => {
+      expect(() => assertRoleFitsScope(customRole('robot:read'), client)).not.toThrow();
+      for (const key of ['robot:pair', 'robot:update', 'robot:move', 'robot:revoke']) {
+        expect(() => assertRoleFitsScope(customRole(key), client)).toThrow(BadRequestException);
+      }
     });
+
+    it.each([['client:read'], ['site:read'], ['robot:read']])(
+      'keeps %s away from advertisers',
+      (key) => {
+        expect(() => assertRoleFitsScope(customRole(key), advertiser)).toThrow(BadRequestException);
+      },
+    );
 
     it('keeps audit access away from advertisers', () => {
       expect(() => assertRoleFitsScope(customRole('audit:read'), advertiser)).toThrow(

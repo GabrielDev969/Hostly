@@ -38,7 +38,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
   },
   {
     name: HOSTLY_ROLES.OPERATOR_STAFF,
-    description: 'Operator staff: reads everything, manages no users or roles',
+    description: 'Operator staff: reads everything, installs robots, manages no users or roles',
     isSystem: true,
     permissionKeys: [
       PERMISSIONS.USER.READ,
@@ -47,6 +47,10 @@ export const DEFAULT_ROLES: DefaultRole[] = [
       PERMISSIONS.AUDIT.READ,
       PERMISSIONS.CLIENT.READ,
       PERMISSIONS.SITE.READ,
+      PERMISSIONS.ROBOT.READ,
+      PERMISSIONS.ROBOT.PAIR,
+      PERMISSIONS.ROBOT.UPDATE,
+      PERMISSIONS.ROBOT.MOVE,
     ],
   },
   {
@@ -58,13 +62,19 @@ export const DEFAULT_ROLES: DefaultRole[] = [
       PERMISSIONS.AUDIT.READ,
       PERMISSIONS.CLIENT.READ,
       PERMISSIONS.SITE.READ,
+      PERMISSIONS.ROBOT.READ,
     ],
   },
   {
     name: HOSTLY_ROLES.CLIENT_EDITOR,
     description: 'Client editor: only their own client, no settings',
     isSystem: true,
-    permissionKeys: [PERMISSIONS.WORKSPACE.READ, PERMISSIONS.CLIENT.READ, PERMISSIONS.SITE.READ],
+    permissionKeys: [
+      PERMISSIONS.WORKSPACE.READ,
+      PERMISSIONS.CLIENT.READ,
+      PERMISSIONS.SITE.READ,
+      PERMISSIONS.ROBOT.READ,
+    ],
   },
   {
     name: HOSTLY_ROLES.ADVERTISER,
@@ -84,7 +94,7 @@ interface ScopeIds {
 // Highest set of permissions a membership of each scope kind may hold, whatever role it gets.
 // Operator memberships are unbounded; client and advertiser ones never reach user, role or invite
 // permissions, which is what keeps operator-only endpoints (and their raw queries) operator-only.
-// Clients read their own client and sites; advertisers stay out of both until the Advertiser issue.
+// Clients read their own client, sites and robots; advertisers stay out of them until the Advertiser issue.
 export const PERMISSION_CEILING: Record<ScopeKind, ReadonlySet<string> | 'any'> = {
   operator: 'any',
   client: new Set([
@@ -92,6 +102,7 @@ export const PERMISSION_CEILING: Record<ScopeKind, ReadonlySet<string> | 'any'> 
     PERMISSIONS.AUDIT.READ,
     PERMISSIONS.CLIENT.READ,
     PERMISSIONS.SITE.READ,
+    PERMISSIONS.ROBOT.READ,
   ]),
   advertiser: new Set([PERMISSIONS.WORKSPACE.READ]),
 };

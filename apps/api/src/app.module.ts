@@ -34,6 +34,7 @@ import { FeatureFlagsModule } from '@modules/feature-flags/feature-flags.module'
 import { OrganizationsModule } from '@modules/organizations/organizations.module';
 import { ClientsModule } from '@modules/clients/clients.module';
 import { SitesModule } from '@modules/sites/sites.module';
+import { RobotsModule } from '@modules/robots/robots.module';
 import { MaintenanceModule } from '@shared/maintenance/maintenance.module';
 import { TenantContextMiddleware } from '@shared/tenancy/tenant-context.middleware';
 
@@ -80,6 +81,7 @@ import { TenantContextMiddleware } from '@shared/tenancy/tenant-context.middlewa
     InvitationsModule,
     ClientsModule,
     SitesModule,
+    RobotsModule,
     AuditModule,
     HealthModule,
     WellKnownModule,

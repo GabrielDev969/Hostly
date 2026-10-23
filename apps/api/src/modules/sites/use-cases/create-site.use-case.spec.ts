@@ -26,6 +26,7 @@ describe('CreateSiteUseCase', () => {
       ),
       update: jest.fn(),
       softDelete: jest.fn(),
+      countRobots: jest.fn(),
     };
     clients = {
       findMany: jest.fn(),

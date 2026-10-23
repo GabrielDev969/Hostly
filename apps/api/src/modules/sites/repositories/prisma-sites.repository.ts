@@ -46,6 +46,10 @@ export class PrismaSitesRepository extends SitesRepository {
     });
   }
 
+  async countRobots(id: string): Promise<number> {
+    return this.scoped.client.robot.count({ where: { siteId: id } });
+  }
+
   private toEntity(raw: PrismaSite): Site {
     return {
       id: raw.id,

@@ -97,10 +97,20 @@ describe('tenant scope registry', () => {
     expect(unregistered).toEqual([]);
   });
 
-  it('scopes clients, sites and invitations by their client column', () => {
+  it('scopes clients, sites, robots and invitations by their client column', () => {
     expect(SCOPED_MODELS.Client?.clientField).toBe('id');
     expect(SCOPED_MODELS.Site?.clientField).toBe('clientId');
+    expect(SCOPED_MODELS.Robot?.clientField).toBe('clientId');
+    expect(SCOPED_MODELS.Robot?.advertiserField).toBeNull();
     expect(SCOPED_MODELS.Invitation?.clientField).toBe('clientId');
+  });
+
+  // A pairing starts before the robot has an owner; it reaches a tenant only through robotId.
+  it('keeps RobotPairing free of tenant columns', () => {
+    const pairing = Prisma.dmmf.datamodel.models.find((model) => model.name === 'RobotPairing');
+    expect(pairing?.fields.map((field) => field.name)).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^(organizationId|clientId|advertiserId)$/)]),
+    );
   });
 
   const rawScopedAccess = (): string[] =>

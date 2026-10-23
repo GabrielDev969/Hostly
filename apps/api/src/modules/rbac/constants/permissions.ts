@@ -35,6 +35,13 @@ export const PERMISSIONS = {
     UPDATE: 'site:update',
     DELETE: 'site:delete',
   },
+  ROBOT: {
+    READ: 'robot:read',
+    PAIR: 'robot:pair',
+    UPDATE: 'robot:update',
+    MOVE: 'robot:move',
+    REVOKE: 'robot:revoke',
+  },
 } as const;
 
 export const ALL_PERMISSION_KEYS: string[] = Object.values(PERMISSIONS).flatMap((group) =>

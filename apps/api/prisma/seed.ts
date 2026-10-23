@@ -86,6 +86,13 @@ const PERMISSIONS = [
   { key: 'site:create', category: 'site', description: 'Create sites' },
   { key: 'site:update', category: 'site', description: 'Update sites' },
   { key: 'site:delete', category: 'site', description: 'Delete sites' },
+
+  // Robots
+  { key: 'robot:read', category: 'robot', description: 'View robots' },
+  { key: 'robot:pair', category: 'robot', description: 'Pair robots by their on-screen code' },
+  { key: 'robot:update', category: 'robot', description: 'Rename robots' },
+  { key: 'robot:move', category: 'robot', description: 'Move robots to another site' },
+  { key: 'robot:revoke', category: 'robot', description: 'Revoke robot device tokens' },
 ];
 
 interface SuperAdminEnv {

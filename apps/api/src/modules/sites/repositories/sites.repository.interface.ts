@@ -19,4 +19,5 @@ export abstract class SitesRepository {
   abstract create(data: CreateSiteData): Promise<Site>;
   abstract update(id: string, data: UpdateSiteData): Promise<Site>;
   abstract softDelete(id: string): Promise<void>;
+  abstract countRobots(id: string): Promise<number>;
 }

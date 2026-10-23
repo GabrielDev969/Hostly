@@ -272,6 +272,9 @@ describe('AuditInterceptor', () => {
           sessionCookie: 'sid=abc',
           authorizationHeader: 'Bearer xyz',
           passwordHashLeak: 'argon2id$...',
+          code: '123456',
+          recoveryCode: 'ABCDE-12345',
+          pairingId: '0b6f0c39-6b8e-4f0e-9f57-0f6a3c1f4a11',
         },
         headers: {},
       },
@@ -300,6 +303,9 @@ describe('AuditInterceptor', () => {
       'sessionCookie',
       'authorizationHeader',
       'passwordHashLeak',
+      'code',
+      'recoveryCode',
+      'pairingId',
     ]) {
       expect(body[key]).toBe('[REDACTED]');
     }
