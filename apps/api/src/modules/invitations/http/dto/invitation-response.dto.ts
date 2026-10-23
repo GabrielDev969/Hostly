@@ -25,13 +25,6 @@ export class InvitationResponseDto {
   })
   clientId: string | null;
 
-  @ApiProperty({
-    description: 'Acceptance token. Only returned on creation.',
-    required: false,
-    example: 'inv_8f3a91c2-...',
-  })
-  token?: string;
-
   @ApiProperty({ example: '2026-05-16T12:34:56.789Z' })
   expiresAt: Date;
 
@@ -46,10 +39,8 @@ export class InvitationResponseDto {
   createdAt: Date;
 }
 
-export function toInvitationDto(
-  invitation: Invitation,
-  options: { rawToken?: string } = {},
-): InvitationResponseDto {
+// Never carries the acceptance token: it goes only in the email, so no response, cache or proxy holds it.
+export function toInvitationDto(invitation: Invitation): InvitationResponseDto {
   return {
     id: invitation.id,
     email: invitation.email,
@@ -57,7 +48,6 @@ export function toInvitationDto(
     roleId: invitation.roleId,
     invitedById: invitation.invitedById,
     clientId: invitation.clientId,
-    ...(options.rawToken ? { token: options.rawToken } : {}),
     expiresAt: invitation.expiresAt,
     acceptedAt: invitation.acceptedAt,
     createdAt: invitation.createdAt,

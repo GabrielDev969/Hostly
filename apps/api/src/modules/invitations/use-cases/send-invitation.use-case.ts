@@ -86,6 +86,6 @@ export class SendInvitationUseCase {
     });
     await this.emailDispatcher.enqueue({ to: input.email, ...message });
 
-    return toInvitationDto(invitation, { rawToken });
+    return toInvitationDto(invitation);
   }
 }

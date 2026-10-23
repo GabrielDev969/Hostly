@@ -82,7 +82,7 @@ export class InvitationsController {
   @ApiResponse({
     status: 201,
     type: InvitationResponseDto,
-    description: 'Includes the acceptance token (use it to send the email)',
+    description: 'Invitation created and emailed; the acceptance token goes only in the email',
   })
   @ApiValidationError()
   @ApiAuthErrors()

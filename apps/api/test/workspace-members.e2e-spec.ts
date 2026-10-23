@@ -78,13 +78,13 @@ describe('Workspace members (e2e)', () => {
       (r) => r.name === roleName,
     ) as { id: string };
 
-    const inviteRes = await request(server)
+    await request(server)
       .post('/api/v1/invitations')
       .set('Authorization', `Bearer ${ownerToken}`)
       .set('x-workspace-id', workspaceId)
       .send({ email, roleId: role.id })
       .expect(201);
-    const token = inviteRes.body.token as string;
+    const token = emailDispatcher.tokenFor(email);
 
     const accessToken = await registerLogin(email, name);
     await request(server)
