@@ -26,6 +26,9 @@ export function clientIp(req: IncomingMessage, trustProxy: boolean | number): st
   return chain[Math.min(trustProxy, chain.length - 1)]!;
 }
 
+// IPs tracked at once; past this the oldest windows are dropped, so a flood of addresses cannot grow memory.
+export const MAX_TRACKED_IPS = 10_000;
+
 interface Window {
   refusals: number;
   endsAt: number;
@@ -34,7 +37,9 @@ interface Window {
 // Counts refused handshakes per IP in memory (one API instance in v1). A blocked IP is refused before its token
 // or ticket reaches the database or Redis, so a burst of bad handshakes costs no I/O.
 export class HandshakeLimiter {
+  // Insertion order is age order: a new window is always appended, so the first entries are the oldest.
   private readonly windows = new Map<string, Window>();
+  private nextPruneAt = 0;
 
   constructor(
     private readonly limit = HANDSHAKE_REFUSALS_PER_WINDOW,
@@ -48,10 +53,13 @@ export class HandshakeLimiter {
 
   // True when this refusal is the one that blocks the IP.
   recordRefusal(ip: string, now = Date.now()): boolean {
-    const window = this.current(ip, now) ?? { refusals: 0, endsAt: now + this.windowMs };
+    let window = this.current(ip, now);
+    if (!window) {
+      window = { refusals: 0, endsAt: now + this.windowMs };
+      this.windows.set(ip, window);
+      this.evict(now);
+    }
     window.refusals += 1;
-    this.windows.set(ip, window);
-    if (this.windows.size > 10_000) this.prune(now);
     return window.refusals === this.limit;
   }
 
@@ -64,7 +72,19 @@ export class HandshakeLimiter {
     return window;
   }
 
-  private prune(now: number): void {
-    for (const [ip, window] of this.windows) if (window.endsAt <= now) this.windows.delete(ip);
+  // Expired windows go at most once per window length; past the cap, the oldest go regardless.
+  private evict(now: number): void {
+    if (now >= this.nextPruneAt) {
+      this.nextPruneAt = now + this.windowMs;
+      for (const [ip, window] of this.windows) if (window.endsAt <= now) this.windows.delete(ip);
+    }
+    for (const ip of this.windows.keys()) {
+      if (this.windows.size <= MAX_TRACKED_IPS) break;
+      this.windows.delete(ip);
+    }
+  }
+
+  get trackedIps(): number {
+    return this.windows.size;
   }
 }

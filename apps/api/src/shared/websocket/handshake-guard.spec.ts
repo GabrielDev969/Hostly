@@ -1,5 +1,5 @@
 import type { IncomingMessage } from 'http';
-import { clientIp, HandshakeLimiter, SECRET_FORMAT } from './handshake-guard';
+import { clientIp, HandshakeLimiter, MAX_TRACKED_IPS, SECRET_FORMAT } from './handshake-guard';
 
 const request = (remoteAddress: string, forwardedFor?: string) =>
   ({
@@ -35,5 +35,15 @@ describe('HandshakeLimiter', () => {
     expect(limiter.isBlocked('ip', 500)).toBe(true);
     expect(limiter.isBlocked('other', 500)).toBe(false);
     expect(limiter.isBlocked('ip', 1_000)).toBe(false);
+  });
+
+  it('keeps at most MAX_TRACKED_IPS windows, dropping the oldest', () => {
+    const limiter = new HandshakeLimiter(2, 60_000);
+    limiter.recordRefusal('first', 0);
+    limiter.recordRefusal('first', 0);
+    for (let i = 0; i < MAX_TRACKED_IPS; i += 1) limiter.recordRefusal(`ip-${i}`, 1);
+
+    expect(limiter.trackedIps).toBe(MAX_TRACKED_IPS);
+    expect(limiter.isBlocked('first', 2)).toBe(false);
   });
 });
