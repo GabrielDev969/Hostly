@@ -45,6 +45,12 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # O build regenera os JSON Schema do contracts; diferença ou arquivo novo aqui é schema sem commit.
+      - name: JSON Schema em dia
+        run: |
+          git diff --exit-code -- packages/contracts/schemas
+          test -z "$(git status --porcelain -- packages/contracts/schemas)"
+
       - name: Unit tests
         run: pnpm test
 
