@@ -36,6 +36,22 @@ export class WorkspaceMemberResponseDto {
   @ApiProperty({ format: 'uuid' })
   roleId: string;
 
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'Client the member belongs to; null for an operator member',
+  })
+  clientId: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'Advertiser the member belongs to (inside clientId); null otherwise',
+  })
+  advertiserId: string | null;
+
   @ApiProperty()
   joinedAt: Date;
 
@@ -52,6 +68,8 @@ export function toMemberDto(member: WorkspaceMemberListItem): WorkspaceMemberRes
     userId: member.userId,
     workspaceId: member.workspaceId,
     roleId: member.roleId,
+    clientId: member.clientId,
+    advertiserId: member.advertiserId,
     joinedAt: member.joinedAt,
     user: member.user,
     role: member.role,

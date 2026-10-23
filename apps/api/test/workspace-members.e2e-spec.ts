@@ -1,11 +1,16 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/test-database';
+import {
+  getPrisma,
+  resetDatabase,
+  startTestDatabase,
+  stopTestDatabase,
+} from './helpers/test-database';
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
-import { provisionOperator } from './helpers/operator';
+import { addScopedMember, createClient, provisionOperator } from './helpers/operator';
 
 interface JoinResult {
   workspaceId: string;
@@ -119,6 +124,45 @@ describe('Workspace members (e2e)', () => {
       (m) => m.user.email === 'b@example.com',
     );
     expect(bob?.role.name).toBe('operator_staff');
+  });
+
+  it('GET /workspaces/:id/members tells the scope of each member', async () => {
+    const { ownerToken, workspaceId } = await ownerSetup();
+    const { organizationId } = await getPrisma().workspace.findUniqueOrThrow({
+      where: { id: workspaceId },
+    });
+    const clientA = await createClient(organizationId, 'Shopping A');
+    await registerLogin('client@example.com', 'Carla');
+    await registerLogin('advertiser@example.com', 'Davi');
+    await addScopedMember(workspaceId, 'client@example.com', 'client_admin', {
+      clientId: clientA,
+      advertiserId: null,
+    });
+    await addScopedMember(workspaceId, 'advertiser@example.com', 'advertiser', {
+      clientId: clientA,
+      advertiserId: 'adv-1',
+    });
+
+    const res = await request(server)
+      .get(`/api/v1/workspaces/${workspaceId}/members`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('x-workspace-id', workspaceId)
+      .expect(200);
+
+    const scopes = Object.fromEntries(
+      (
+        res.body as Array<{
+          user: { email: string };
+          clientId: string | null;
+          advertiserId: string | null;
+        }>
+      ).map((m) => [m.user.email, { clientId: m.clientId, advertiserId: m.advertiserId }]),
+    );
+    expect(scopes).toEqual({
+      'owner@example.com': { clientId: null, advertiserId: null },
+      'client@example.com': { clientId: clientA, advertiserId: null },
+      'advertiser@example.com': { clientId: clientA, advertiserId: 'adv-1' },
+    });
   });
 
   it('PATCH /workspaces/:id/members/:memberId changes the role', async () => {

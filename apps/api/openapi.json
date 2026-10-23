@@ -6787,6 +6787,18 @@
             "type": "string",
             "format": "uuid"
           },
+          "clientId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Client the member belongs to; null for an operator member"
+          },
+          "advertiserId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Advertiser the member belongs to (inside clientId); null otherwise"
+          },
           "joinedAt": {
             "format": "date-time",
             "type": "string"
@@ -6803,6 +6815,8 @@
           "userId",
           "workspaceId",
           "roleId",
+          "clientId",
+          "advertiserId",
           "joinedAt",
           "user",
           "role"
