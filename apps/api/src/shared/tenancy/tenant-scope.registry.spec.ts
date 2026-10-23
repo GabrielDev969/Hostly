@@ -10,7 +10,7 @@ const SCOPE_COLUMNS = ['organizationId', 'clientId', 'advertiserId'];
 // Files allowed to touch scoped models through the raw PrismaService, and why.
 const RAW_ACCESS_ALLOWLIST: Record<string, string> = {
   'src/modules/workspaces/repositories/prisma-workspace-members.repository.ts':
-    'membership lookups feed the WorkspaceGuard before a scope exists; listings and findById use the scoped client',
+    'membership lookups feed the WorkspaceGuard before a scope exists, and accepting an invitation creates the membership, closes the invitation and locks its client before the user has a scope; listings and findById use the scoped client',
   'src/modules/workspaces/repositories/prisma-workspaces.repository.ts':
     'creates the tenant with its owner membership and internal client, moves ownership between operator members, and finds the operator workspace of a robot',
   'src/modules/audit/repositories/prisma-audit-logs.repository.ts':
@@ -20,7 +20,7 @@ const RAW_ACCESS_ALLOWLIST: Record<string, string> = {
   'src/modules/users/repositories/prisma-users.repository.ts':
     'user listings filter by membership; only operator-scoped memberships can hold user:* (see PERMISSION_CEILING)',
   'src/modules/invitations/repositories/prisma-invitations.repository.ts':
-    'accepting resolves and closes the invitation by token before the user has a membership; the rest uses the scoped client',
+    'accepting resolves the invitation by token before the user has a membership; the rest uses the scoped client',
   'src/modules/organizations/repositories/prisma-organizations.repository.ts':
     'resolves organizations by id, slug or owner for identity flows; creating a tenant is system work',
 };

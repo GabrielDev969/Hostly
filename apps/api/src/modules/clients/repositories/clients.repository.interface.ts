@@ -22,6 +22,6 @@ export abstract class ClientsRepository {
   abstract findById(id: string): Promise<Client | null>;
   abstract create(data: CreateClientData): Promise<Client>;
   abstract update(id: string, data: UpdateClientData): Promise<Client>;
-  abstract softDelete(id: string): Promise<void>;
-  abstract countDependents(id: string): Promise<ClientDependents>;
+  // Deletes only when nothing points to the client, counted under the row lock; returns the counts.
+  abstract softDeleteUnlessUsed(id: string): Promise<ClientDependents>;
 }

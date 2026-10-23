@@ -8,6 +8,20 @@ export interface CreateWorkspaceMemberData {
   advertiserId?: string | null;
 }
 
+export interface CreateFromInvitationData {
+  invitationId: string;
+  userId: string;
+  workspaceId: string;
+  roleId: string;
+  clientId: string | null;
+  now: Date;
+}
+
+export type CreateFromInvitationResult =
+  | { status: 'created'; member: WorkspaceMember }
+  | { status: 'client_gone' }
+  | { status: 'not_pending' };
+
 export interface WorkspaceMemberWithRelations extends WorkspaceMember {
   organizationId: string;
   role: {
@@ -33,6 +47,10 @@ export interface WorkspaceMemberListItem extends WorkspaceMember {
 
 export abstract class WorkspaceMembersRepository {
   abstract create(data: CreateWorkspaceMemberData): Promise<WorkspaceMember>;
+  // Creates the membership and closes the invitation atomically, while its client is still live.
+  abstract createFromInvitation(
+    data: CreateFromInvitationData,
+  ): Promise<CreateFromInvitationResult>;
   abstract findById(id: string): Promise<WorkspaceMember | null>;
   abstract findByUserAndWorkspace(
     userId: string,

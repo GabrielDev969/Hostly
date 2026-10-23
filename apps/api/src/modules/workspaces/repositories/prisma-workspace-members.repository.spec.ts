@@ -16,10 +16,21 @@ type MemberClient = {
 
 type WorkspaceClient = { findUnique: jest.Mock };
 
-type PrismaMock = { workspaceMember: MemberClient; workspace: WorkspaceClient };
+type TxMock = {
+  client: { updateMany: jest.Mock };
+  invitation: { updateMany: jest.Mock };
+  workspaceMember: { create: jest.Mock };
+};
+
+type PrismaMock = {
+  workspaceMember: MemberClient;
+  workspace: WorkspaceClient;
+  $transaction: jest.Mock;
+};
 
 describe('PrismaWorkspaceMembersRepository', () => {
   let prisma: PrismaMock;
+  let tx: TxMock;
   let repo: PrismaWorkspaceMembersRepository;
 
   const baseMember = {
@@ -33,7 +44,13 @@ describe('PrismaWorkspaceMembersRepository', () => {
   };
 
   beforeEach(() => {
+    tx = {
+      client: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      invitation: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      workspaceMember: { create: jest.fn() },
+    };
     prisma = {
+      $transaction: jest.fn((fn: (client: TxMock) => Promise<unknown>) => fn(tx)),
       workspaceMember: {
         create: jest.fn(),
         findUnique: jest.fn(),
@@ -85,6 +102,59 @@ describe('PrismaWorkspaceMembersRepository', () => {
         data: { userId: 'u1', workspaceId: 'w1', roleId: 'r1' },
       });
       expect(result).toEqual(baseMember);
+    });
+  });
+
+  describe('createFromInvitation', () => {
+    const now = new Date('2026-10-23T12:00:00Z');
+    const data = {
+      invitationId: 'i1',
+      userId: 'u1',
+      workspaceId: 'w1',
+      roleId: 'r1',
+      clientId: 'client-a',
+      now,
+    };
+
+    it('locks the live client, closes the pending invitation and creates the membership', async () => {
+      tx.workspaceMember.create.mockResolvedValue({ ...baseMember, clientId: 'client-a' });
+
+      const result = await repo.createFromInvitation(data);
+
+      expect(result).toEqual({
+        status: 'created',
+        member: { ...baseMember, clientId: 'client-a' },
+      });
+      expect(tx.client.updateMany).toHaveBeenCalledWith({
+        where: { id: 'client-a', deletedAt: null },
+        data: { updatedAt: now },
+      });
+      expect(tx.invitation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'i1', acceptedAt: null, expiresAt: { gt: now } },
+        data: { acceptedAt: now },
+      });
+      expect(tx.workspaceMember.create).toHaveBeenCalledWith({
+        data: { userId: 'u1', workspaceId: 'w1', roleId: 'r1', clientId: 'client-a' },
+      });
+    });
+
+    it('skips the client lock for an operator membership', async () => {
+      tx.workspaceMember.create.mockResolvedValue(baseMember);
+      await repo.createFromInvitation({ ...data, clientId: null });
+      expect(tx.client.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('creates nothing when the client is gone', async () => {
+      tx.client.updateMany.mockResolvedValue({ count: 0 });
+      expect(await repo.createFromInvitation(data)).toEqual({ status: 'client_gone' });
+      expect(tx.invitation.updateMany).not.toHaveBeenCalled();
+      expect(tx.workspaceMember.create).not.toHaveBeenCalled();
+    });
+
+    it('creates nothing when the invitation is no longer pending', async () => {
+      tx.invitation.updateMany.mockResolvedValue({ count: 0 });
+      expect(await repo.createFromInvitation(data)).toEqual({ status: 'not_pending' });
+      expect(tx.workspaceMember.create).not.toHaveBeenCalled();
     });
   });
 

@@ -26,8 +26,7 @@ describe('DeleteClientUseCase', () => {
       findById: jest.fn().mockResolvedValue(client()),
       create: jest.fn(),
       update: jest.fn(),
-      softDelete: jest.fn(),
-      countDependents: jest.fn().mockResolvedValue(none),
+      softDeleteUnlessUsed: jest.fn().mockResolvedValue(none),
     };
     useCase = new DeleteClientUseCase(clients);
   });
@@ -35,21 +34,21 @@ describe('DeleteClientUseCase', () => {
   it('soft deletes a client nothing points to', async () => {
     await useCase.execute('c1');
 
-    expect(clients.softDelete).toHaveBeenCalledWith('c1');
+    expect(clients.softDeleteUnlessUsed).toHaveBeenCalledWith('c1');
   });
 
   it('throws 404 when the client is not in scope', async () => {
     clients.findById.mockResolvedValue(null);
 
     await expect(useCase.execute('c1')).rejects.toBeInstanceOf(NotFoundException);
-    expect(clients.softDelete).not.toHaveBeenCalled();
+    expect(clients.softDeleteUnlessUsed).not.toHaveBeenCalled();
   });
 
   it('never deletes the internal client', async () => {
     clients.findById.mockResolvedValue(client({ isInternal: true }));
 
     await expect(useCase.execute('c1')).rejects.toBeInstanceOf(ConflictException);
-    expect(clients.softDelete).not.toHaveBeenCalled();
+    expect(clients.softDeleteUnlessUsed).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -57,11 +56,10 @@ describe('DeleteClientUseCase', () => {
     ['pendingInvitations', { ...none, pendingInvitations: 2 }],
     ['sites', { ...none, sites: 3 }],
   ])('throws 409 while the client still has %s', async (kind, dependents) => {
-    clients.countDependents.mockResolvedValue(dependents);
+    clients.softDeleteUnlessUsed.mockResolvedValue(dependents);
 
     await expect(useCase.execute('c1')).rejects.toThrow(
       new ConflictException(`Client still has ${kind}; remove them first`),
     );
-    expect(clients.softDelete).not.toHaveBeenCalled();
   });
 });

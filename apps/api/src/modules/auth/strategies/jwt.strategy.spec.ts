@@ -23,7 +23,7 @@ describe('JwtStrategy', () => {
   let users: jest.Mocked<UsersRepository>;
   let strategy: JwtStrategy;
   const resolver = new JwtKeyResolverService();
-  const nowSeconds = Math.floor(Date.now() / 1000);
+  const nowMs = Date.now();
 
   beforeEach(() => {
     sessions = {
@@ -47,7 +47,7 @@ describe('JwtStrategy', () => {
       await strategy.validate({
         sub: 'u1',
         sessionId: 's1',
-        iat: nowSeconds,
+        iatMs: nowMs,
       }),
     ).toEqual({
       id: 'u1',
@@ -58,7 +58,7 @@ describe('JwtStrategy', () => {
 
   it('rejects a 2FA challenge token used as an access token', async () => {
     await expect(
-      strategy.validate({ sub: 'u1', type: '2fa-challenge', iat: nowSeconds }),
+      strategy.validate({ sub: 'u1', type: '2fa-challenge', iatMs: nowMs }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(sessions.findById).not.toHaveBeenCalled();
   });
@@ -69,7 +69,7 @@ describe('JwtStrategy', () => {
       strategy.validate({
         sub: 'u1',
         sessionId: 's-missing',
-        iat: nowSeconds,
+        iatMs: nowMs,
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
@@ -77,38 +77,75 @@ describe('JwtStrategy', () => {
   it('rejects when session is revoked', async () => {
     sessions.findById.mockResolvedValue(baseSession({ revokedAt: new Date() }));
     await expect(
-      strategy.validate({ sub: 'u1', sessionId: 's1', iat: nowSeconds }),
+      strategy.validate({ sub: 'u1', sessionId: 's1', iatMs: nowMs }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('rejects when session is expired', async () => {
     sessions.findById.mockResolvedValue(baseSession({ expiresAt: new Date(Date.now() - 60_000) }));
     await expect(
-      strategy.validate({ sub: 'u1', sessionId: 's1', iat: nowSeconds }),
+      strategy.validate({ sub: 'u1', sessionId: 's1', iatMs: nowMs }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
-  it('rejects when tokensInvalidatedAt is newer than the token iat', async () => {
+  // iat has whole seconds; these tokens and the invalidation share the second 1_800_000_000.
+  const second = 1_800_000_000_000;
+  const invalidatedAt = new Date(second + 500);
+
+  it('rejects a token issued earlier in the same second as the invalidation', async () => {
     sessions.findById.mockResolvedValue(baseSession());
-    users.findTokensInvalidatedAt.mockResolvedValue(new Date((nowSeconds + 5) * 1000));
+    users.findTokensInvalidatedAt.mockResolvedValue(invalidatedAt);
     await expect(
-      strategy.validate({ sub: 'u1', sessionId: 's1', iat: nowSeconds }),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+      strategy.validate({ sub: 'u1', sessionId: 's1', iatMs: second + 400 }),
+    ).rejects.toThrow(new UnauthorizedException('Token has been invalidated'));
   });
 
-  it('accepts when tokensInvalidatedAt is older than the token iat', async () => {
+  it('rejects a token issued in the same millisecond as the invalidation', async () => {
     sessions.findById.mockResolvedValue(baseSession());
-    users.findTokensInvalidatedAt.mockResolvedValue(new Date((nowSeconds - 5) * 1000));
+    users.findTokensInvalidatedAt.mockResolvedValue(invalidatedAt);
     await expect(
-      strategy.validate({ sub: 'u1', sessionId: 's1', iat: nowSeconds }),
+      strategy.validate({ sub: 'u1', sessionId: 's1', iatMs: second + 500 }),
+    ).rejects.toThrow(new UnauthorizedException('Token has been invalidated'));
+  });
+
+  it('accepts a token issued later in the same second as the invalidation', async () => {
+    sessions.findById.mockResolvedValue(baseSession());
+    users.findTokensInvalidatedAt.mockResolvedValue(invalidatedAt);
+    await expect(
+      strategy.validate({ sub: 'u1', sessionId: 's1', iatMs: second + 600 }),
     ).resolves.toEqual({ id: 'u1', sessionId: 's1' });
+  });
+
+  it('rejects a token issued seconds before the invalidation', async () => {
+    sessions.findById.mockResolvedValue(baseSession());
+    users.findTokensInvalidatedAt.mockResolvedValue(new Date(nowMs + 5_000));
+    await expect(
+      strategy.validate({ sub: 'u1', sessionId: 's1', iatMs: nowMs }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('accepts a token issued seconds after the invalidation', async () => {
+    sessions.findById.mockResolvedValue(baseSession());
+    users.findTokensInvalidatedAt.mockResolvedValue(new Date(nowMs - 5_000));
+    await expect(strategy.validate({ sub: 'u1', sessionId: 's1', iatMs: nowMs })).resolves.toEqual({
+      id: 'u1',
+      sessionId: 's1',
+    });
+  });
+
+  it('rejects an access token without the millisecond issue time', async () => {
+    await expect(strategy.validate({ sub: 'u1', sessionId: 's1' })).rejects.toThrow(
+      new UnauthorizedException('Invalid access token'),
+    );
+    expect(sessions.findById).not.toHaveBeenCalled();
   });
 
   it('accepts when tokensInvalidatedAt is null', async () => {
     sessions.findById.mockResolvedValue(baseSession());
     users.findTokensInvalidatedAt.mockResolvedValue(null);
-    await expect(
-      strategy.validate({ sub: 'u1', sessionId: 's1', iat: nowSeconds }),
-    ).resolves.toEqual({ id: 'u1', sessionId: 's1' });
+    await expect(strategy.validate({ sub: 'u1', sessionId: 's1', iatMs: nowMs })).resolves.toEqual({
+      id: 'u1',
+      sessionId: 's1',
+    });
   });
 });

@@ -22,8 +22,7 @@ describe('CreateClientUseCase', () => {
         } as Client),
       ),
       update: jest.fn(),
-      softDelete: jest.fn(),
-      countDependents: jest.fn(),
+      softDeleteUnlessUsed: jest.fn(),
     };
     useCase = new CreateClientUseCase(clients);
   });

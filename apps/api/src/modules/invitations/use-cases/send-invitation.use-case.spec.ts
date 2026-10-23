@@ -34,7 +34,6 @@ describe('SendInvitationUseCase', () => {
       findByTokenHash: jest.fn(),
       findManyByWorkspace: jest.fn(),
       findPendingByEmailAndWorkspace: jest.fn(),
-      markAsAccepted: jest.fn(),
       delete: jest.fn(),
     };
     roles = {
@@ -74,6 +73,7 @@ describe('SendInvitationUseCase', () => {
       updateRole: jest.fn(),
       delete: jest.fn(),
       findManyByWorkspaceWithRelations: jest.fn(),
+      createFromInvitation: jest.fn(),
     };
     workspaces = {
       findById: jest.fn().mockResolvedValue({ id: 'w1', name: 'Acme' }),
@@ -83,8 +83,7 @@ describe('SendInvitationUseCase', () => {
       findById: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
-      softDelete: jest.fn(),
-      countDependents: jest.fn(),
+      softDeleteUnlessUsed: jest.fn(),
     };
     emailDispatcher = {
       enqueue: jest.fn().mockResolvedValue(undefined),

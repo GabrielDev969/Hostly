@@ -9,6 +9,12 @@ import {
   UpdateClientData,
 } from './clients.repository.interface';
 
+class ClientInUse extends Error {
+  constructor(readonly dependents: ClientDependents) {
+    super('Client in use');
+  }
+}
+
 @Injectable()
 export class PrismaClientsRepository extends ClientsRepository {
   constructor(private scoped: ScopedPrismaService) {
@@ -44,22 +50,29 @@ export class PrismaClientsRepository extends ClientsRepository {
     return this.toEntity(client);
   }
 
-  async softDelete(id: string): Promise<void> {
-    await this.scoped.client.client.update({
-      where: { id, deletedAt: null },
-      data: { deletedAt: new Date() },
-    });
-  }
-
-  async countDependents(id: string): Promise<ClientDependents> {
-    const [members, pendingInvitations, sites] = await Promise.all([
-      this.scoped.client.workspaceMember.count({ where: { clientId: id } }),
-      this.scoped.client.invitation.count({
-        where: { clientId: id, acceptedAt: null, expiresAt: { gt: new Date() } },
-      }),
-      this.scoped.client.site.count({ where: { clientId: id, deletedAt: null } }),
-    ]);
-    return { members, pendingInvitations, sites };
+  // Marking the row deleted locks it before counting, so an invitation being accepted either
+  // commits its membership first (and the count sees it) or finds the client gone.
+  async softDeleteUnlessUsed(id: string): Promise<ClientDependents> {
+    try {
+      return await this.scoped.client.$transaction(async (tx) => {
+        const now = new Date();
+        await tx.client.update({ where: { id, deletedAt: null }, data: { deletedAt: now } });
+        const dependents: ClientDependents = {
+          members: await tx.workspaceMember.count({ where: { clientId: id } }),
+          pendingInvitations: await tx.invitation.count({
+            where: { clientId: id, acceptedAt: null, expiresAt: { gt: now } },
+          }),
+          sites: await tx.site.count({ where: { clientId: id, deletedAt: null } }),
+        };
+        if (Object.values(dependents).some((count) => count > 0)) {
+          throw new ClientInUse(dependents);
+        }
+        return dependents;
+      });
+    } catch (error) {
+      if (error instanceof ClientInUse) return error.dependents;
+      throw error;
+    }
   }
 
   private toEntity(raw: ClientRow): Client {

@@ -19,9 +19,10 @@ export class TokenService {
     private resolver: JwtKeyResolverService,
   ) {}
 
+  // iat has whole seconds; iatMs lets the JwtStrategy order the token against tokensInvalidatedAt.
   signAccessToken(input: { userId: string; sessionId: string }): Promise<string> {
     return this.jwt.signAsync(
-      { sub: input.userId, sessionId: input.sessionId },
+      { sub: input.userId, sessionId: input.sessionId, iatMs: Date.now() },
       {
         privateKey: this.resolver.currentPrivateKey,
         keyid: this.resolver.currentKid,

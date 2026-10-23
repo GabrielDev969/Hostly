@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, TransformFnParams } from 'class-transformer';
-import { IsOptional, IsString, IsTimeZone, IsUUID, MaxLength, MinLength } from 'class-validator';
-import { canonicalTimeZone } from './canonical-time-zone';
+import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { canonicalTimeZone, IsRegionTimeZone } from './canonical-time-zone';
 
 const trim = ({ value }: TransformFnParams): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -19,7 +19,7 @@ export class CreateSiteDto {
   name: string;
 
   @ApiProperty({ example: 'America/Sao_Paulo', description: 'IANA time zone of the schedule' })
-  @IsTimeZone()
+  @IsRegionTimeZone()
   @Transform(canonicalTimeZone)
   timezone: string;
 

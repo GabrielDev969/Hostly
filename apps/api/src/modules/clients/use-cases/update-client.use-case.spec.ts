@@ -25,8 +25,7 @@ describe('UpdateClientUseCase', () => {
       findById: jest.fn(),
       create: jest.fn(),
       update: jest.fn((id, data) => Promise.resolve(client({ id, ...data }))),
-      softDelete: jest.fn(),
-      countDependents: jest.fn(),
+      softDeleteUnlessUsed: jest.fn(),
     };
     useCase = new UpdateClientUseCase(clients);
   });

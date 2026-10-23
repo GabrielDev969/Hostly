@@ -134,6 +134,35 @@ describe('Admin: invalidate user tokens (e2e)', () => {
       .expect(200);
   });
 
+  it('orders the access token against the invalidation by millisecond, not by second', async () => {
+    const token = await registerAndLogin('jane@example.com', 'Jane');
+    const { iatMs } = JSON.parse(
+      Buffer.from(token.split('.')[1]!, 'base64url').toString('utf8'),
+    ) as { iatMs: number };
+    const me = () => request(server).get('/api/v1/auth/me').set('Authorization', `Bearer ${token}`);
+    // Loaded lazily like the app: importing it at the top would parse env before the container exists.
+    const { CacheService } =
+      require('../src/shared/cache/cache.service') as typeof import('../src/shared/cache/cache.service');
+    const { CACHE_NS } =
+      require('../src/shared/cache/cache.constants') as typeof import('../src/shared/cache/cache.constants');
+    // Written straight to the row to pick the instant, so drop the cached value as invalidateTokens does.
+    const invalidateAt = async (ms: number) => {
+      await getPrisma().user.update({
+        where: { email: 'jane@example.com' },
+        data: { tokensInvalidatedAt: new Date(ms) },
+      });
+      await app.get(CacheService).bumpNamespace(CACHE_NS.users);
+    };
+
+    // Issued right after the invalidation, usually in the same second: still valid.
+    await invalidateAt(iatMs - 1);
+    await me().expect(200);
+
+    // Issued in the very millisecond of the invalidation: refused.
+    await invalidateAt(iatMs);
+    await me().expect(401);
+  });
+
   it('returns 404 when target user does not exist', async () => {
     const adminToken = await registerAndLogin('admin@example.com', 'Admin');
     const adminMe = await request(server)

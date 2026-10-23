@@ -148,21 +148,6 @@ describe('PrismaInvitationsRepository', () => {
     });
   });
 
-  describe('markAsAccepted', () => {
-    it('updates acceptedAt with a Date', async () => {
-      prisma.invitation.update.mockResolvedValue(baseRow);
-
-      await repo.markAsAccepted('inv1');
-
-      const args = prisma.invitation.update.mock.calls[0][0] as {
-        where: { id: string };
-        data: { acceptedAt: Date };
-      };
-      expect(args.where).toEqual({ id: 'inv1' });
-      expect(args.data.acceptedAt).toBeInstanceOf(Date);
-    });
-  });
-
   describe('delete', () => {
     it('removes by id', async () => {
       prisma.invitation.delete.mockResolvedValue(baseRow);

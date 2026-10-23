@@ -142,7 +142,7 @@ export class InvitationsController {
   @ApiResponse({ status: 200, description: 'Membership created' })
   @ApiResponse({
     status: 400,
-    description: 'Expired or already accepted',
+    description: 'Expired, already accepted, or its role no longer fits the membership',
     type: ErrorResponseDto,
   })
   @ApiValidationError()
@@ -152,6 +152,7 @@ export class InvitationsController {
     type: ErrorResponseDto,
   })
   @ApiNotFoundError('Invitation')
+  @ApiConflictError('Already a member, or the role or client of the invitation no longer exists')
   @ApiRateLimitError()
   @ApiServerError()
   async accept(
