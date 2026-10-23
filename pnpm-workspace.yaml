@@ -20,3 +20,10 @@ allowBuilds:
   protobufjs: false
   ssh2: false
   unrs-resolver: false
+
+# Peers declarados atrás da versão que o repo usa, provados na #19: o openapi-typescript só imprime
+# o AST com o TypeScript 6, e as regras do jsx-a11y rodam no ESLint 10.
+peerDependencyRules:
+  allowedVersions:
+    openapi-typescript>typescript: '6'
+    eslint-plugin-jsx-a11y>eslint: '10'
