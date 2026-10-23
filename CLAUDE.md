@@ -61,8 +61,10 @@ Pré-requisito: `nvm use` (Node 24.22.1, fixado no `.nvmrc`). O pnpm 12.15.0 vem
 | `pnpm typecheck` | `tsc` sem emitir |
 | `pnpm test` | Testes unitários (sem Docker) |
 | `pnpm test:e2e` | Testes e2e; os da API usam Testcontainers e precisam do Docker/OrbStack |
-| `pnpm format` / `pnpm format:check` | Prettier escreve / confere (ignora `*.md` e `apps/robot`) |
+| `pnpm format` / `pnpm format:check` | Prettier escreve / confere (ignora `*.md`, `apps/robot` e os JSON Schema gerados) |
 | `pnpm turbo run <tarefa> --filter <pacote>` | Roda uma tarefa num pacote só, ex.: `--filter @hostly/config` |
+| `pnpm --filter @hostly/contracts build` | Compila o pacote e regenera `packages/contracts/schemas/*.json` (o diff entra no commit) |
+| `pnpm --filter @hostly/contracts test` | Valida as fixtures contra os schemas (`node --test`, direto do `src`) |
 | `cp .env.example .env` | Cria o `.env` local (uma vez; o git ignora) |
 | `pnpm --filter @hostly/api env:keys` | Imprime chaves JWT e `ENCRYPTION_KEY` de desenvolvimento pra colar no `.env` |
 | `pnpm --filter @hostly/api dev` | Sobe só a API em watch (porta `API_PORT`; Swagger em `/docs`) |
@@ -85,12 +87,28 @@ A API (`apps/api`) tem regras próprias em [`apps/api/CLAUDE.md`](apps/api/CLAUD
 existem: web e worker entram no `pnpm dev` quando nascerem (#19, #30); `apps/robot` é Gradle, fora do pnpm, e os
 comandos dele chegam na #23.
 
+Contratos (`packages/contracts`, `@hostly/contracts`): schemas Zod dos formatos robô ↔ nuvem, um nome por schema em
+`contractSchemas` (`src/registry.ts`), que vira `schemas/<nome>.json` e a pasta `fixtures/<nome>/{valid,invalid}`.
+
+- O pacote é só ESM (`"type": "module"`). A API, CommonJS, carrega o `dist` por `require(esm)` (Node 24), então nada de
+  top-level `await` no pacote. No Jest da API, `@hostly/contracts` aponta pro `src` e o
+  `apps/api/test/transformers/esm-source.mjs` compila pra CommonJS.
+- Imports relativos com `.ts` (o `tsc` reescreve pra `.js`): o Node roda os testes e o gerador direto do `src`.
+- O zod vem do `catalog:` do `pnpm-workspace.yaml`, igual pra todos os pacotes.
+- `CONTRACT_VERSION` (`src/version.ts`, inteiro, vai no `hello`) sobe só em mudança que quebra: campo removido ou
+  renomeado, tipo, unidade ou limite mais estrito, campo novo obrigatório, valor de enum removido ou novo num campo que
+  o outro lado lê. Campo opcional novo e mensagem nova não sobem.
+- Quem recebe ignora o que não conhece, sem derrubar a conexão: `type` desconhecido e payload inválido viram log
+  (`parseRobotMessage` / `parseCloudMessage`), e campo a mais é descartado.
+- Unidades: x/y em metros, `theta` em radianos, bateria de 0 a 100 (%); o app converte se o robô reportar diferente.
+
 ## CI
 
 `.github/workflows/ci.yml` roda em todo PR pra `main` e em todo push na `main`, com os mesmos comandos da tabela acima
 e sem nenhum segredo (o `apps/api/test/env.ts` gera as chaves dos testes):
 
-- **`verify`**: `pnpm install --frozen-lockfile`, `format:check`, `lint`, `typecheck`, `build` e `test`.
+- **`verify`**: `pnpm install --frozen-lockfile`, `format:check`, `lint`, `typecheck`, `build`, JSON Schema em dia
+  (falha se o build mudou ou criou algo em `packages/contracts/schemas`) e `test`.
 - **`e2e`**: `pnpm install --frozen-lockfile` e `test:e2e` (Testcontainers no Docker do runner), em paralelo ao `verify`.
 
 O ruleset `main` exige PR (sem aprovação, porque o dono trabalha sozinho) e os checks `verify` e `e2e` verdes, bloqueia

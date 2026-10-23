@@ -3,6 +3,10 @@ packages:
   - packages/*
   - '!apps/robot'
 
+# Uma versão só pra quem precisa da mesma em todo o workspace.
+catalog:
+  zod: 4.4.3
+
 # pnpm 12 recusa o install se uma dependência tiver script de build não revisado.
 # false = só aviso, telemetria ou binário nativo opcional com fallback em JS.
 allowBuilds:

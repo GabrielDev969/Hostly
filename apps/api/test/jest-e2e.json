@@ -5,12 +5,14 @@
   "testEnvironmentOptions": { "customExportConditions": ["node"] },
   "testRegex": ".e2e-spec.ts$",
   "transform": {
+    "packages/contracts/src/.+\\.ts$": "<rootDir>/test/transformers/esm-source.mjs",
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "setupFiles": ["<rootDir>/test/env.ts"],
   "globalSetup": "<rootDir>/test/helpers/test-redis.ts",
   "moduleNameMapper": {
     "^nanoid$": "<rootDir>/test/stubs/nanoid.ts",
+    "^@hostly/contracts$": "<rootDir>/../../packages/contracts/src/index.ts",
     "^@core/(.*)$": "<rootDir>/src/core/$1",
     "^@modules/(.*)$": "<rootDir>/src/modules/$1",
     "^@shared/(.*)$": "<rootDir>/src/shared/$1",
