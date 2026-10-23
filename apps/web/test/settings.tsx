@@ -315,13 +315,14 @@ export function settingsApi(
 export function renderSettings(
   role: RoleName = 'operator_admin',
   options: Parameters<typeof settingsApi>[1] = {},
+  path = '/settings',
 ) {
   const session = panelHandlers(role);
   const api = settingsApi(role, options);
   // Later handlers win, so these replace the session's /me and /clients.
   server.use(...session.handlers);
   server.use(...api.handlers);
-  setLocation('/settings');
+  setLocation(path);
   const rendered = renderWithSession(
     <PanelLayout>
       <SettingsPage />

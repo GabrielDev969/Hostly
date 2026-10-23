@@ -87,6 +87,14 @@ describe('pairing a robot', () => {
     expect(api.calls.lookups).toEqual([]);
   });
 
+  it('starts with the client chosen in the shell', async () => {
+    renderSettings('operator_admin', {}, `/settings?client=${CLIENT_A}`);
+    const section = await screen.findByRole('region', { name: 'Parear robô' });
+
+    await waitFor(() => expect(within(section).getByLabelText('Cliente')).toHaveValue(CLIENT_A));
+    expect(within(section).getByLabelText('Local')).toBeEnabled();
+  });
+
   it('lists the internal client and only the chosen client’s sites', async () => {
     const { user, section } = await renderPairing();
     const site = within(section).getByLabelText('Local');

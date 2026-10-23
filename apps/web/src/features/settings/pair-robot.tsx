@@ -30,14 +30,17 @@ export function PairRobot() {
   const { sites, isError: sitesError } = useSites();
 
   const [code, setCode] = useState('');
-  const [clientId, setClientId] = useState(filter.clientId ?? '');
+  // Until the user picks one, the client chosen in the shell (?client=) is the default; it is known only once the
+  // client list loads.
+  const [pickedClient, setPickedClient] = useState<string | null>(null);
+  const clientId = pickedClient ?? filter.clientId ?? '';
   const [siteId, setSiteId] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
   const [error, setError] = useState('');
   const [codeInvalid, setCodeInvalid] = useState(false);
   const [notice, setNotice] = useState('');
 
-  const ids = { code: useId(), help: useId(), client: useId(), site: useId(), error: useId() };
+  const ids = { code: useId(), help: useId(), client: useId(), site: useId() };
   const codeRef = useRef<HTMLInputElement>(null);
   const confirmRef = useRef<HTMLHeadingElement>(null);
 
@@ -211,7 +214,7 @@ export function PairRobot() {
                 value={clientId}
                 required
                 onChange={(event) => {
-                  setClientId(event.target.value);
+                  setPickedClient(event.target.value);
                   setSiteId('');
                 }}
               >
