@@ -1,14 +1,15 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { env } from './config/env.config';
 import { corsOrigins } from './config/cors.config';
 import { WsAdapter } from '@nestjs/platform-ws';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
+import { buildOpenApiDocument, configureRouting } from './config/openapi.config';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -38,18 +39,10 @@ async function bootstrap() {
     }),
   );
 
-  app.setGlobalPrefix('api', {
-    exclude: ['health', 'health/ready', 'metrics', '.well-known/jwks.json'],
-  });
-  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+  configureRouting(app);
 
   if (env.NODE_ENV !== 'production') {
-    const config = new DocumentBuilder()
-      .setTitle('Workspace API')
-      .setVersion('1.0')
-      .addBearerAuth()
-      .build();
-    SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
+    SwaggerModule.setup('docs', app, buildOpenApiDocument(app));
   }
   await app.listen(env.API_PORT);
 }

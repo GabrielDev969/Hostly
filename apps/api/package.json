@@ -16,7 +16,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "env:keys": "ts-node scripts/env-keys.ts",
-    "fake-robot": "ts-node scripts/fake-robot/main.ts"
+    "fake-robot": "ts-node scripts/fake-robot/main.ts",
+    "openapi": "OPENAPI_WRITE=1 jest src/config/openapi.spec.ts"
   },
   "dependencies": {
     "@hostly/contracts": "workspace:*",
