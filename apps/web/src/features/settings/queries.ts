@@ -35,7 +35,7 @@ export function useSettingsPermissions() {
   };
 }
 
-export function useMembers() {
+export function useMembers(enabled = true) {
   const { workspace, api } = usePanelSession();
   return useQuery({
     queryKey: settingsKeys.members(workspace.id),
@@ -45,6 +45,7 @@ export function useMembers() {
           params: { path: { workspaceId: workspace.id } },
         }),
       ),
+    enabled,
   });
 }
 
