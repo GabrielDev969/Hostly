@@ -2,6 +2,8 @@ import type { Config } from 'jest';
 
 const config: Config = {
   rootDir: 'src',
+  // The fake-robot script has unit tests of its own.
+  roots: ['<rootDir>', '<rootDir>/../scripts'],
   testRegex: '.*\\.spec\\.ts$',
   testEnvironment: 'node',
   moduleFileExtensions: ['js', 'json', 'ts'],
