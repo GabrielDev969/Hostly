@@ -583,6 +583,27 @@ describe('Robots and pairing (e2e)', () => {
       await expect(auth.authenticate(delivered.deviceToken)).resolves.not.toBeNull();
     });
 
+    it('drops the other approvals on delivery, so none replaces a token it was not allowed to revoke', async () => {
+      const paired = await pair('LB-E2E-0506', siteA);
+      await as('opAdminX').post(`/api/v1/robots/${paired.robotId}/revoke`).expect(200);
+
+      // Both approved while the robot is revoked: staff needs no robot:revoke for that.
+      const byStaff = await approveAgain('LB-E2E-0506', siteA, 'opStaffX');
+      expect(byStaff.res.status).toBe(201);
+      const byAdmin = await approveAgain('LB-E2E-0506', siteA, 'opAdminX');
+      expect(byAdmin.res.status).toBe(201);
+
+      const delivered = await poll(byAdmin.started.pairingId);
+      if (delivered.status !== 'approved') throw new Error('expected approved');
+
+      // The robot is active now; the staff approval must not take its token.
+      await expect(poll(byStaff.started.pairingId)).resolves.toEqual({ status: 'expired' });
+      await expect(auth.authenticate(delivered.deviceToken)).resolves.toMatchObject({
+        id: paired.robotId,
+        status: 'active',
+      });
+    });
+
     it('refuses a role with only robot:pair moving a robot through a new pairing', async () => {
       const paired = await pair('LB-E2E-0504', siteA);
       await as('opAdminX').post(`/api/v1/robots/${paired.robotId}/revoke`).expect(200);
