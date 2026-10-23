@@ -2,13 +2,27 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { Ref } from 'react';
 import { usePanelSession } from '@/lib/session/session-provider';
 import { ClientSelector } from './client-selector';
 import type { MenuGroup } from './menu';
 import styles from './shell.module.css';
 import { CLIENT_PARAM, useClientFilter } from './use-client-filter';
 
-export function Sidebar({ menu }: { menu: readonly MenuGroup[] }) {
+export function Sidebar({
+  ref,
+  id,
+  menu,
+  open,
+  onClose,
+}: {
+  ref: Ref<HTMLElement>;
+  id: string;
+  menu: readonly MenuGroup[];
+  // Only on a phone, where the menu is a panel over the content; on a desktop it is always there.
+  open: boolean;
+  onClose: () => void;
+}) {
   const { user, workspace, membership, logout } = usePanelSession();
   const { clientId } = useClientFilter();
   const pathname = usePathname();
@@ -17,7 +31,10 @@ export function Sidebar({ menu }: { menu: readonly MenuGroup[] }) {
     membership.scope.kind === 'operator' && clientId ? `${href}?${CLIENT_PARAM}=${clientId}` : href;
 
   return (
-    <aside className={styles.sidebar}>
+    <aside ref={ref} id={id} className={styles.sidebar} data-open={open || undefined}>
+      <button type="button" className={styles.closeButton} onClick={onClose}>
+        Fechar menu
+      </button>
       <p className={styles.organization}>{workspace.name}</p>
       <ClientSelector />
       <nav aria-label="Menu principal" className={styles.nav}>
@@ -40,6 +57,8 @@ export function Sidebar({ menu }: { menu: readonly MenuGroup[] }) {
                       href={withClient(item.href)}
                       className={styles.item}
                       aria-current={active ? 'page' : undefined}
+                      // Also when it is the current page, where the path does not change.
+                      onClick={onClose}
                     >
                       {item.label}
                     </Link>

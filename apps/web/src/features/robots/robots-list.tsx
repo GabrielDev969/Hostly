@@ -42,7 +42,7 @@ export function RobotsList() {
     );
   } else {
     body = (
-      <div className={styles.tableWrap}>
+      <div className={styles.tableWrap} tabIndex={0} role="region" aria-label="Tabela de robôs">
         <table className={styles.table}>
           <caption className="visually-hidden">Robôs</caption>
           <thead>

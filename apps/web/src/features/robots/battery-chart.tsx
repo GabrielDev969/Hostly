@@ -146,27 +146,34 @@ function Chart({ history }: { history: TelemetryHistory }) {
       </svg>
       <details className={styles.chartTable}>
         <summary>Ver em tabela</summary>
-        <table className={styles.table}>
-          <caption className="visually-hidden">Última leitura de bateria de cada hora</caption>
-          <thead>
-            <tr>
-              <th scope="col">Hora</th>
-              <th scope="col">Bateria</th>
-              <th scope="col">Carregando</th>
-              <th scope="col">Modo</th>
-            </tr>
-          </thead>
-          <tbody>
-            {hourlyReadings(history.points).map((point) => (
-              <tr key={point.at}>
-                <td className={styles.mono}>{formatTime(point.at)}</td>
-                <td className={styles.mono}>{formatBattery(point.battery)}</td>
-                <td>{point.charging === null ? '—' : point.charging ? 'Sim' : 'Não'}</td>
-                <td>{MODE_LABELS[point.mode]}</td>
+        <div
+          className={styles.tableWrap}
+          tabIndex={0}
+          role="region"
+          aria-label="Tabela da bateria por hora"
+        >
+          <table className={styles.table}>
+            <caption className="visually-hidden">Última leitura de bateria de cada hora</caption>
+            <thead>
+              <tr>
+                <th scope="col">Hora</th>
+                <th scope="col">Bateria</th>
+                <th scope="col">Carregando</th>
+                <th scope="col">Modo</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {hourlyReadings(history.points).map((point) => (
+                <tr key={point.at}>
+                  <td className={styles.mono}>{formatTime(point.at)}</td>
+                  <td className={styles.mono}>{formatBattery(point.battery)}</td>
+                  <td>{point.charging === null ? '—' : point.charging ? 'Sim' : 'Não'}</td>
+                  <td>{MODE_LABELS[point.mode]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </details>
     </>
   );

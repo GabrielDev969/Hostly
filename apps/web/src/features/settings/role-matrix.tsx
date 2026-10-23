@@ -16,7 +16,12 @@ export function RoleMatrix() {
       <h2 id="role-matrix-title" className={styles.panelTitle}>
         O que cada papel pode
       </h2>
-      <div className={styles.tableWrap}>
+      <div
+        className={styles.tableWrap}
+        tabIndex={0}
+        role="region"
+        aria-label="Tabela do que cada papel pode"
+      >
         <table className={styles.table}>
           <caption className="visually-hidden">O que cada papel pode</caption>
           <thead>

@@ -163,3 +163,120 @@
   max-width: var(--content-max-width);
   padding: var(--content-padding-y) var(--content-padding-x);
 }
+
+/* Only on a phone. */
+.topbar,
+.backdrop,
+.closeButton {
+  display: none;
+}
+
+/* Phone: keep the width in sync with globals.css and MOBILE_QUERY in app-shell.tsx. */
+@media (max-width: 767px) {
+  .shell {
+    flex-direction: column;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: var(--topbar-height);
+    padding: 0 var(--content-padding-x);
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+  }
+
+  .topbar :focus-visible {
+    outline-color: var(--focus-ring-dark);
+  }
+
+  .menuButton,
+  .closeButton {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    min-width: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+    padding: 0 14px;
+    border: 1px solid var(--sidebar-border);
+    border-radius: var(--radius-item);
+    background: none;
+    color: var(--sidebar-item-active-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .closeButton {
+    align-self: flex-start;
+    margin-bottom: 16px;
+  }
+
+  .topbarOrganization {
+    min-width: 0;
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--sidebar-item-active-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-menu);
+    background: var(--color-backdrop);
+  }
+
+  /* Closed, it is hidden (out of the Tab order and of screen readers) once it has slid away. */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: var(--z-menu);
+    width: var(--menu-panel-width);
+    height: auto;
+    overscroll-behavior: contain;
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition:
+      transform var(--menu-slide-duration) ease,
+      visibility 0s linear var(--menu-slide-duration);
+  }
+
+  .sidebar[data-open] {
+    visibility: visible;
+    transform: none;
+    transition: transform var(--menu-slide-duration) ease;
+  }
+
+  .item,
+  .select,
+  .fixedClient,
+  .logout {
+    min-height: var(--touch-target-min);
+  }
+
+  .item,
+  .fixedClient {
+    display: flex;
+    align-items: center;
+  }
+}
+
+/* No slide when the person asked for less motion: the panel just shows and hides. */
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar[data-open] {
+    transition: none;
+  }
+}

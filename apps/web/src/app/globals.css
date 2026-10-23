@@ -45,6 +45,26 @@
   --content-padding-x: 40px;
   --card-padding: 20px;
   --button-height: 44px;
+
+  --topbar-height: 56px;
+  --menu-panel-width: min(300px, 85vw);
+  --z-menu: 40;
+  --menu-slide-duration: 200ms;
+  /* No floor on a desktop; 44px on a phone, where the finger is the pointer. */
+  --touch-target-min: 0px;
+}
+
+/*
+ * Phone: below 768px the menu becomes a panel over the content. Keep the width in sync with shell.module.css and
+ * MOBILE_QUERY in app-shell.tsx (a media query cannot read a custom property).
+ */
+@media (max-width: 767px) {
+  :root {
+    --content-padding-y: 20px;
+    --content-padding-x: 16px;
+    --card-padding: 16px;
+    --touch-target-min: 44px;
+  }
 }
 
 *,

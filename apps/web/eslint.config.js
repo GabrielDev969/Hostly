@@ -20,4 +20,14 @@ export default defineConfig(
   nextPlugin.configs['core-web-vitals'],
   reactHooks.configs.flat['recommended-latest'],
   jsxA11y.flatConfigs.recommended,
+  {
+    rules: {
+      // The recommended options, plus a named region: a table that scrolls sideways takes the focus so the keyboard
+      // can scroll it (axe "scrollable-region-focusable").
+      'jsx-a11y/no-noninteractive-tabindex': [
+        'error',
+        { tags: [], roles: ['tabpanel', 'region'], allowExpressionValues: true },
+      ],
+    },
+  },
 );

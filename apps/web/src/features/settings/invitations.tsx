@@ -268,7 +268,12 @@ export function PendingInvitations({
       pending.length === 0 ? (
         <p className={styles.muted}>Nenhum convite pendente.</p>
       ) : (
-        <div className={styles.tableWrap}>
+        <div
+          className={styles.tableWrap}
+          tabIndex={0}
+          role="region"
+          aria-label="Tabela de convites pendentes"
+        >
           <table className={styles.table}>
             <caption className="visually-hidden">Convites pendentes</caption>
             <thead>
