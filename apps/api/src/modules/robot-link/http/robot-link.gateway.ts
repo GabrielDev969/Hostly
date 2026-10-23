@@ -26,6 +26,7 @@ import {
   SECRET_FORMAT,
   SOCKET_CLOSE_TIMEOUT_MS,
 } from '@shared/websocket/handshake-guard';
+import { KnownRobotTokens } from '../services/known-robot-tokens';
 import { MESSAGES_PER_PING_INTERVAL, RobotConnection } from '../services/robot-connection';
 import { RobotConnectionRegistry } from '../services/robot-connection-registry';
 import type { RobotSession } from '../services/robot-scope.service';
@@ -66,6 +67,7 @@ export class RobotLinkGateway
   private readonly pendingSessions = new WeakMap<IncomingMessage, RobotSession>();
   private readonly connections = new Set<RobotConnection>();
   private readonly handshakes = new HandshakeLimiter();
+  private readonly knownTokens = new KnownRobotTokens();
   // Presence writes of one robot run one after the other, so a close and a reconnect never cross in the database.
   private readonly writes = new Map<string, Promise<void>>();
   private tokenChanges?: Subscription;
@@ -133,16 +135,23 @@ export class RobotLinkGateway
 
   // Null when accepted, otherwise the HTTP status of the refusal. The upgrade bypasses Express and its throttler,
   // so a malformed token or an IP with too many refusals stops here, before the database is asked anything.
+  // A blocked IP still gets a paced attempt through, and a token that authenticated before gets its own pace.
   private async verify(req: IncomingMessage): Promise<number | null> {
     const ip = clientIp(req, env.TRUST_PROXY);
-    if (this.handshakes.isBlocked(ip)) return 429;
+    const blocked = this.handshakes.isBlocked(ip);
     const token = bearerToken(req);
-    if (!token || !SECRET_FORMAT.test(token)) return this.refuse(ip, 'malformed token');
+    if (!token || !SECRET_FORMAT.test(token)) {
+      return blocked ? 429 : this.refuse(ip, 'malformed token');
+    }
     const deviceTokenHash = CryptoUtil.hashToken(token);
+    if (blocked && !(this.knownTokens.admit(deviceTokenHash) ?? this.handshakes.admit(ip))) {
+      return 429;
+    }
     const robot = await this.auth.authenticateHash(deviceTokenHash);
-    if (!robot) return this.refuse(ip, 'unknown token');
+    if (!robot) return this.refuseToken(ip, deviceTokenHash, 'unknown token');
     const workspaceId = await this.auth.operatorWorkspaceId(robot.organizationId);
-    if (!workspaceId) return this.refuse(ip, 'no operator workspace');
+    if (!workspaceId) return this.refuseToken(ip, deviceTokenHash, 'no operator workspace');
+    this.knownTokens.remember(robot.id, deviceTokenHash);
     this.pendingSessions.set(req, {
       robotId: robot.id,
       serial: robot.serial,
@@ -151,6 +160,11 @@ export class RobotLinkGateway
       deviceTokenHash,
     });
     return null;
+  }
+
+  private refuseToken(ip: string, deviceTokenHash: string, reason: string): number {
+    this.knownTokens.forget(deviceTokenHash);
+    return this.refuse(ip, reason);
   }
 
   private refuse(ip: string, reason: string): number {
@@ -248,15 +262,13 @@ export class RobotLinkGateway
       const robot = await this.auth.authenticateHash(session.deviceTokenHash);
       if (connection.closing) return;
       if (!robot) {
-        connection.close(ROBOT_SOCKET_CLOSE.unauthorized, 'token no longer valid');
+        this.closeInvalidToken(connection);
         return;
       }
       connection.acceptHello();
       const previous = this.registry.register(session.robotId, connection);
       previous?.close(ROBOT_SOCKET_CLOSE.replaced, 'replaced by a newer connection');
-      if (!(await this.recordHello.execute(session, hello))) {
-        connection.close(ROBOT_SOCKET_CLOSE.unauthorized, 'token no longer valid');
-      }
+      if (!(await this.recordHello.execute(session, hello))) this.closeInvalidToken(connection);
     });
   }
 
@@ -271,6 +283,7 @@ export class RobotLinkGateway
 
   // A revoked token, or one replaced by a new pairing, ends the sockets opened with it right away.
   private onTokenChange(change: RobotTokenChange): void {
+    this.knownTokens.apply(change);
     for (const connection of this.connections) {
       const session = connection.session;
       if (
@@ -286,10 +299,13 @@ export class RobotLinkGateway
   private write(connection: RobotConnection, task: () => Promise<boolean>): void {
     this.serialize(connection.session.robotId, async () => {
       if (connection.closing || connection.hello !== 'accepted') return;
-      if (!(await task())) {
-        connection.close(ROBOT_SOCKET_CLOSE.unauthorized, 'token no longer valid');
-      }
+      if (!(await task())) this.closeInvalidToken(connection);
     });
+  }
+
+  private closeInvalidToken(connection: RobotConnection): void {
+    this.knownTokens.forget(connection.session.deviceTokenHash);
+    connection.close(ROBOT_SOCKET_CLOSE.unauthorized, 'token no longer valid');
   }
 
   private serialize(robotId: string, task: () => Promise<void>): void {

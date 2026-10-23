@@ -33,7 +33,7 @@ const base64Pem = (label: string, kind: 'PRIVATE' | 'PUBLIC') =>
 
 const kidPattern = /^[A-Za-z0-9._-]{1,64}$/;
 
-const envSchema = z
+export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     API_PORT: z.coerce.number().default(3001),
@@ -167,7 +167,11 @@ const envSchema = z
     ALERT_DISCORD_WEBHOOK_URL: z.string().url().optional(),
 
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional(),
-    LOG_PRETTY: z.coerce.boolean().optional(),
+    // Explicit, because z.coerce.boolean() reads "false" as true. Empty counts as unset.
+    LOG_PRETTY: z
+      .enum(['true', 'false', ''], { message: 'LOG_PRETTY must be "true" or "false"' })
+      .optional()
+      .transform((val) => (val ? val === 'true' : undefined)),
     LOG_SLOW_REQUEST_MS: z.coerce.number().int().positive().default(1000),
     LOG_SLOW_QUERY_MS: z.coerce.number().int().positive().default(100),
 
