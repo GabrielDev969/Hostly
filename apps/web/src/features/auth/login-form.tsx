@@ -1,9 +1,10 @@
 'use client';
 
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import { Button, LinkButton } from '@/components/ui';
 import { ApiError } from '@/lib/api/errors';
 import { useSession } from '@/lib/session/session-provider';
+import { ForgotPasswordForm } from './forgot-password';
 import styles from './login.module.css';
 
 // The API answers both with 401; only an expired challenge sends the user back to the password.
@@ -11,7 +12,8 @@ const EXPIRED_CHALLENGE = 'Invalid or expired challenge';
 
 type Step =
   | { kind: 'credentials'; notice?: string }
-  | { kind: 'two-factor'; challenge: string; recovery: boolean };
+  | { kind: 'two-factor'; challenge: string; recovery: boolean }
+  | { kind: 'forgot' };
 
 function field(data: FormData, name: string): string {
   const value = data.get(name);
@@ -22,6 +24,8 @@ function credentialsError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401) return 'E-mail ou senha inválidos.';
     if (error.status === 400) return 'Confira o e-mail e a senha.';
+    // The only 403 of the login: the account exists but its e-mail was not confirmed yet.
+    if (error.status === 403) return 'Confirme seu e-mail pelo link que enviamos antes de entrar.';
     if (error.status === 423) {
       return 'Conta bloqueada por excesso de tentativas. Tente de novo em alguns minutos.';
     }
@@ -39,9 +43,23 @@ function codeError(error: unknown): string {
   return 'Não foi possível verificar o código agora. Tente de novo.';
 }
 
-export function LoginForm({ notice }: { notice?: string }) {
+export function LoginForm({
+  notice,
+  footer,
+  startAtForgot = false,
+  onSignedIn,
+}: {
+  notice?: string;
+  // Shown under the credentials form, e.g. the link to create an account on the invitation page.
+  footer?: ReactNode;
+  startAtForgot?: boolean;
+  // Runs once the session holds the signed-in user.
+  onSignedIn?: () => void;
+}) {
   const { login, verifyTwoFactor } = useSession();
-  const [step, setStep] = useState<Step>({ kind: 'credentials', notice });
+  const [step, setStep] = useState<Step>(
+    startAtForgot ? { kind: 'forgot' } : { kind: 'credentials', notice },
+  );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const errorId = useId();
@@ -55,6 +73,8 @@ export function LoginForm({ notice }: { notice?: string }) {
       const result = await login(field(data, 'email'), field(data, 'password'));
       if (result.kind === 'two-factor') {
         setStep({ kind: 'two-factor', challenge: result.challenge, recovery: false });
+      } else {
+        onSignedIn?.();
       }
     } catch (caught) {
       setError(credentialsError(caught));
@@ -71,6 +91,7 @@ export function LoginForm({ notice }: { notice?: string }) {
     setError(null);
     try {
       await verifyTwoFactor(step.challenge, code);
+      onSignedIn?.();
     } catch (caught) {
       if (caught instanceof ApiError && caught.message === EXPIRED_CHALLENGE) {
         setStep({
@@ -90,6 +111,10 @@ export function LoginForm({ notice }: { notice?: string }) {
       {error}
     </p>
   );
+
+  if (step.kind === 'forgot') {
+    return <ForgotPasswordForm onBack={() => setStep({ kind: 'credentials' })} />;
+  }
 
   if (step.kind === 'credentials') {
     return (
@@ -140,7 +165,18 @@ export function LoginForm({ notice }: { notice?: string }) {
           <Button type="submit" className={styles.submit} disabled={submitting}>
             {submitting ? 'Entrando…' : 'Entrar'}
           </Button>
+          <div className={styles.links}>
+            <LinkButton
+              onClick={() => {
+                setError(null);
+                setStep({ kind: 'forgot' });
+              }}
+            >
+              Esqueci a senha
+            </LinkButton>
+          </div>
         </form>
+        {footer}
       </div>
     );
   }

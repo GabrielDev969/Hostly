@@ -11,7 +11,8 @@ import { useSession } from '@/lib/session/session-provider';
 function LoginScreen() {
   const { state, retry } = useSession();
   const router = useRouter();
-  const next = safeNextPath(useSearchParams().get('next'));
+  const searchParams = useSearchParams();
+  const next = safeNextPath(searchParams.get('next'));
 
   useEffect(() => {
     if (state.status === 'authenticated') router.replace(next);
@@ -33,6 +34,7 @@ function LoginScreen() {
     <main className={loginStyles.page}>
       <LoginForm
         notice={state.reason === 'expired' ? 'Sua sessão expirou. Entre de novo.' : undefined}
+        startAtForgot={searchParams.get('forgot') === '1'}
       />
     </main>
   );

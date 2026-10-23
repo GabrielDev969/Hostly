@@ -44,6 +44,8 @@ interface SessionContextValue {
   verifyTwoFactor: (challenge: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   selectWorkspace: (workspaceId: string) => Promise<void>;
+  // Reloads the user's workspaces (after joining one) and enters the given one when it is listed.
+  reloadProfile: (workspaceId?: string) => Promise<void>;
   retry: () => Promise<void>;
 }
 
@@ -96,13 +98,18 @@ export function SessionProvider({
     [api],
   );
 
-  const loadProfile = useCallback(async () => {
-    const user = await unwrap(api().GET('/api/v1/auth/me'));
-    const workspace = user.workspaces.length === 1 ? user.workspaces[0]! : null;
-    const membership = workspace ? await loadMembership(workspace.id) : null;
-    userRef.current = user;
-    setState({ status: 'authenticated', user, workspace, membership });
-  }, [api, loadMembership]);
+  const loadProfile = useCallback(
+    async (preferredId?: string) => {
+      const user = await unwrap(api().GET('/api/v1/auth/me'));
+      const workspace =
+        user.workspaces.find((w) => w.id === preferredId) ??
+        (user.workspaces.length === 1 ? user.workspaces[0]! : null);
+      const membership = workspace ? await loadMembership(workspace.id) : null;
+      userRef.current = user;
+      setState({ status: 'authenticated', user, workspace, membership });
+    },
+    [api, loadMembership],
+  );
 
   const boot = useCallback(
     () =>
@@ -168,6 +175,7 @@ export function SessionProvider({
           const membership = await loadMembership(workspace.id);
           setState({ status: 'authenticated', user, workspace, membership });
         }),
+      reloadProfile: (workspaceId) => settle(() => loadProfile(workspaceId)),
       retry: boot,
     }),
     [state, api, client, settle, loadProfile, loadMembership, signedOut, boot],
