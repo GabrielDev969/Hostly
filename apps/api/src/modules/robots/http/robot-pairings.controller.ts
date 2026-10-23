@@ -9,6 +9,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Audit } from '@shared/decorators/audit.decorator';
+import { CurrentPermissions } from '@shared/decorators/current-permissions.decorator';
 import { CurrentUser } from '@shared/decorators/current-user.decorator';
 import { RequirePermissions } from '@shared/decorators/require-permissions.decorator';
 import { PermissionsGuard } from '@shared/guards/permissions.guard';
@@ -71,6 +72,8 @@ export class RobotPairingsController {
   @Audit({ action: 'robot.paired', resource: 'Robot' })
   @ApiOperation({
     summary: 'Approve a pairing code into a site: creates the robot or updates it (same serial)',
+    description:
+      'Pairing an existing robot again also requires robot:revoke if it is active, robot:move if the site changes and robot:update if the name changes.',
   })
   @ApiBody({ type: ApprovePairingDto })
   @ApiResponse({ status: 201, type: RobotResponseDto })
@@ -82,6 +85,7 @@ export class RobotPairingsController {
   @ApiServerError()
   async approve(
     @CurrentUser() user: AuthenticatedUser,
+    @CurrentPermissions() permissions: string[],
     @Body() dto: ApprovePairingDto,
   ): Promise<RobotResponseDto> {
     return this.approvePairing.execute({
@@ -89,6 +93,7 @@ export class RobotPairingsController {
       code: dto.code,
       siteId: dto.siteId,
       name: dto.name,
+      permissions,
     });
   }
 }

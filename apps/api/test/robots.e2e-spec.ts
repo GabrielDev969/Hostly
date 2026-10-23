@@ -32,6 +32,7 @@ const USERS = {
   clientAdminA: 'client-admin-a@example.com',
   clientEditorA: 'client-editor-a@example.com',
   advertiserA: 'advertiser-a@example.com',
+  pairOnlyX: 'pair-only-x@example.com',
   opAdminY: 'op-admin-y@example.com',
 } as const;
 
@@ -198,6 +199,21 @@ describe('Robots and pairing (e2e)', () => {
     await addScopedMember(workspaceX, USERS.advertiserA, 'advertiser', {
       clientId: clientA,
       advertiserId: 'adv-1',
+    });
+    // A custom operator role that pairs robots and nothing else.
+    const pairPermission = await getPrisma().permission.findFirstOrThrow({
+      where: { key: 'robot:pair', workspaceId: null },
+    });
+    await getPrisma().role.create({
+      data: {
+        name: 'pair_only',
+        workspaceId: workspaceX,
+        permissions: { create: [{ permissionId: pairPermission.id }] },
+      },
+    });
+    await addScopedMember(workspaceX, USERS.pairOnlyX, 'pair_only', {
+      clientId: null,
+      advertiserId: null,
     });
   });
 
@@ -511,6 +527,89 @@ describe('Robots and pairing (e2e)', () => {
         .post(`/api/v1/robots/${paired.robotId}/move`, { siteId: siteA })
         .expect(200);
       await as('opAdminX').delete(`/api/v1/sites/${site}`).expect(204);
+    });
+  });
+
+  describe('pairing an existing robot again', () => {
+    const approveAgain = async (serial: string, siteId: string, user: UserKey) => {
+      const started = await start(serial);
+      return { started, res: await approve(started.code, siteId, user) };
+    };
+
+    it('refuses operator staff taking the token of an active robot', async () => {
+      const paired = await pair('LB-E2E-0501', siteA);
+
+      const { res } = await approveAgain('LB-E2E-0501', siteA, 'opStaffX');
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({
+        message:
+          'Pairing this robot again requires robot:revoke (it is active and loses its token)',
+      });
+      await expect(auth.authenticate(paired.deviceToken)).resolves.toMatchObject({
+        id: paired.robotId,
+      });
+      const row = await getPrisma().robot.findUniqueOrThrow({ where: { id: paired.robotId } });
+      expect(row).toMatchObject({ status: 'active', siteId: siteA });
+    });
+
+    it('lets the admin pair an active robot again; the old token dies on delivery', async () => {
+      const paired = await pair('LB-E2E-0502', siteA);
+
+      const { started, res } = await approveAgain('LB-E2E-0502', siteA, 'opAdminX');
+
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ id: paired.robotId, status: 'active' });
+      // Still valid until the robot fetches the new token.
+      await expect(auth.authenticate(paired.deviceToken)).resolves.not.toBeNull();
+      const delivered = await poll(started.pairingId);
+      if (delivered.status !== 'approved') throw new Error('expected approved');
+      await expect(auth.authenticate(paired.deviceToken)).resolves.toBeNull();
+      await expect(auth.authenticate(delivered.deviceToken)).resolves.toMatchObject({
+        id: paired.robotId,
+      });
+    });
+
+    it('lets operator staff pair a revoked robot again at the same site', async () => {
+      const paired = await pair('LB-E2E-0503', siteA);
+      await as('opAdminX').post(`/api/v1/robots/${paired.robotId}/revoke`).expect(200);
+
+      const { started, res } = await approveAgain('LB-E2E-0503', siteA, 'opStaffX');
+
+      expect(res.status).toBe(201);
+      const delivered = await poll(started.pairingId);
+      if (delivered.status !== 'approved') throw new Error('expected approved');
+      expect(delivered.robotId).toBe(paired.robotId);
+      await expect(auth.authenticate(delivered.deviceToken)).resolves.not.toBeNull();
+    });
+
+    it('refuses a role with only robot:pair moving a robot through a new pairing', async () => {
+      const paired = await pair('LB-E2E-0504', siteA);
+      await as('opAdminX').post(`/api/v1/robots/${paired.robotId}/revoke`).expect(200);
+
+      const { res } = await approveAgain('LB-E2E-0504', siteB, 'pairOnlyX');
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({
+        message: 'Pairing this robot again requires robot:move (the site changes)',
+      });
+      const row = await getPrisma().robot.findUniqueOrThrow({ where: { id: paired.robotId } });
+      expect(row).toMatchObject({ siteId: siteA, clientId: clientA, status: 'revoked' });
+    });
+
+    it('answers a double click on a new serial with "already approved", not another organization', async () => {
+      const started = await start('LB-E2E-0505');
+
+      const results = await Promise.all([
+        approve(started.code, siteA),
+        approve(started.code, siteA),
+      ]);
+
+      expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+      expect(results.find((r) => r.status === 409)!.body).toMatchObject({
+        message: 'This pairing was already approved',
+      });
+      expect(await getPrisma().robot.count({ where: { serial: 'LB-E2E-0505' } })).toBe(1);
     });
   });
 

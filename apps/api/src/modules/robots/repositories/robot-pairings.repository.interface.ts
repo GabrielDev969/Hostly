@@ -16,6 +16,9 @@ export interface ApprovePairingData {
   // Undefined keeps the current name; a new robot is then named after its serial.
   name?: string;
   expiresAt: Date;
+  // Runs inside the transaction, on the robot as it is there, before an existing robot changes;
+  // throwing rolls the approval back.
+  authorizeExisting: (existing: Robot) => void;
 }
 
 export type ApprovePairingResult =

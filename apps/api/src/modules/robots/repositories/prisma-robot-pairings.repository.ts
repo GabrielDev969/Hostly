@@ -50,12 +50,11 @@ export class PrismaRobotPairingsRepository extends RobotPairingsRepository {
     return pairing ? this.toEntity(pairing) : null;
   }
 
-  // Robot ids and serials are the only unique columns a robot write can violate here, and ids are
-  // random UUIDs: a unique violation means the serial belongs to another organization.
   async approve(data: ApprovePairingData): Promise<ApprovePairingResult> {
     try {
       return await this.scoped.client.$transaction(async (tx) => {
         const existing = await tx.robot.findFirst({ where: { serial: data.serial } });
+        if (existing) data.authorizeExisting(toRobot(existing));
         const robot = existing
           ? await tx.robot.update({
               where: { id: existing.id },
@@ -79,9 +78,16 @@ export class PrismaRobotPairingsRepository extends RobotPairingsRepository {
       });
     } catch (error) {
       if (error instanceof PairingNotPending) return { status: 'not_pending' };
-      if (isUniqueViolation(error)) return { status: 'serial_taken' };
+      if (isUniqueViolation(error)) return this.serialConflict(data.serial);
       throw error;
     }
+  }
+
+  // Robot ids are random UUIDs, so the violation is the serial: a concurrent approval in this
+  // organization (a double click) created it, or another organization holds it.
+  private async serialConflict(serial: string): Promise<ApprovePairingResult> {
+    const own = await this.scoped.client.robot.findFirst({ where: { serial } });
+    return own ? { status: 'not_pending' } : { status: 'serial_taken' };
   }
 
   // The delete takes the row lock: a concurrent poll waits, then finds nothing to claim.

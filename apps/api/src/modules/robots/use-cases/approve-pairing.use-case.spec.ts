@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SitesRepository } from '@modules/sites/repositories/sites.repository.interface';
 import { ApprovePairingUseCase, DELIVERY_GRACE_MS } from './approve-pairing.use-case';
 import { RobotPairingsRepository } from '../repositories/robot-pairings.repository.interface';
@@ -22,7 +22,19 @@ describe('ApprovePairingUseCase', () => {
     expiresAt: new Date(Date.now() + expiresInMs),
     createdAt: new Date(),
   });
-  const input = { userId: 'u1', code: '123456', siteId: 's2' };
+  const input = { userId: 'u1', code: '123456', siteId: 's2', permissions: ['robot:pair'] };
+  const existing = (overrides: Partial<Robot> = {}): Robot => ({
+    ...robot,
+    name: 'Robot L2',
+    status: 'revoked',
+    ...overrides,
+  });
+  // Runs the authorization the repository runs inside its transaction, on this robot.
+  const approvingExisting = (found: Robot) =>
+    pairings.approve.mockImplementation((data) => {
+      data.authorizeExisting(found);
+      return Promise.resolve({ status: 'approved', robot: found });
+    });
 
   beforeEach(() => {
     codes = { findPending: jest.fn().mockResolvedValue(pairing(5 * 60_000)) };
@@ -100,5 +112,43 @@ describe('ApprovePairingUseCase', () => {
     pairings.approve.mockResolvedValue({ status: 'not_pending' });
 
     await expect(useCase.execute(input)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  describe('pairing an existing robot again', () => {
+    it('needs nothing beyond robot:pair when it is not active and nothing else changes', async () => {
+      approvingExisting(existing());
+
+      await expect(useCase.execute({ ...input, name: 'Robot L2' })).resolves.toMatchObject({
+        id: 'r1',
+      });
+    });
+
+    it.each([
+      ['robot:revoke', 'an active robot', existing({ status: 'active' }), {}],
+      ['robot:move', 'another site', existing({ siteId: 's1' }), {}],
+      ['robot:update', 'another name', existing(), { name: 'Robot L3' }],
+    ])('requires %s for %s', async (permission, _, found, extra) => {
+      approvingExisting(found);
+
+      await expect(useCase.execute({ ...input, ...extra })).rejects.toThrow(
+        expect.objectContaining({ message: expect.stringContaining(permission) }) as Error,
+      );
+      await expect(useCase.execute({ ...input, ...extra })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(
+        useCase.execute({ ...input, ...extra, permissions: ['robot:pair', permission] }),
+      ).resolves.toMatchObject({ id: 'r1' });
+    });
+
+    it('lists every missing permission at once', async () => {
+      approvingExisting(existing({ status: 'active', siteId: 's1' }));
+
+      await expect(useCase.execute({ ...input, name: 'Robot L3' })).rejects.toThrow(
+        new ForbiddenException(
+          'Pairing this robot again requires robot:revoke (it is active and loses its token), robot:move (the site changes), robot:update (the name changes)',
+        ),
+      );
+    });
   });
 });
