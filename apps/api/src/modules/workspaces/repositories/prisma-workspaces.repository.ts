@@ -110,6 +110,16 @@ export class PrismaWorkspacesRepository extends WorkspacesRepository {
     return workspace ? this.toEntity(workspace) : null;
   }
 
+  // An operator is one organization with one workspace; the oldest wins should a second ever exist.
+  async findOperatorWorkspaceId(organizationId: string): Promise<string | null> {
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { organizationId, isPersonal: false, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    return workspace?.id ?? null;
+  }
+
   async findByUserId(userId: string): Promise<Workspace[]> {
     const memberships = await this.prisma.workspaceMember.findMany({
       where: { userId, workspace: { deletedAt: null } },

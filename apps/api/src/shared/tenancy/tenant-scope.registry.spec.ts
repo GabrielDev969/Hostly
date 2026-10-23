@@ -12,7 +12,7 @@ const RAW_ACCESS_ALLOWLIST: Record<string, string> = {
   'src/modules/workspaces/repositories/prisma-workspace-members.repository.ts':
     'membership lookups feed the WorkspaceGuard before a scope exists; listings and findById use the scoped client',
   'src/modules/workspaces/repositories/prisma-workspaces.repository.ts':
-    'creates the tenant with its owner membership and internal client, and moves ownership between operator members',
+    'creates the tenant with its owner membership and internal client, moves ownership between operator members, and finds the operator workspace of a robot',
   'src/modules/audit/repositories/prisma-audit-logs.repository.ts':
     'the append-only hash chain, retention and verification span every tenant; listing uses the scoped client',
   'src/modules/rbac/repositories/prisma-roles.repository.ts':

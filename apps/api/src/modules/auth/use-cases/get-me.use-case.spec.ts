@@ -67,6 +67,7 @@ describe('GetMeUseCase', () => {
       findById: jest.fn(),
       findBySlug: jest.fn(),
       findByUserId: jest.fn(),
+      findOperatorWorkspaceId: jest.fn(),
       update: jest.fn(),
       softDelete: jest.fn(),
       transferOwnership: jest.fn(),

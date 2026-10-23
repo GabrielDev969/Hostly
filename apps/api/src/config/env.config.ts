@@ -1,6 +1,7 @@
 import './load-root-env';
 import * as crypto from 'crypto';
 import { z } from 'zod';
+import { ROBOT_SOCKET_DEFAULTS } from '@hostly/contracts';
 
 function decodeBase64Pem(raw: string, kind: 'PRIVATE' | 'PUBLIC'): string | null {
   try {
@@ -175,6 +176,27 @@ const envSchema = z
     SESSION_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
     AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
     EPHEMERAL_TOKEN_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
+    TELEMETRY_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
+
+    ROBOT_SOCKET_PING_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(ROBOT_SOCKET_DEFAULTS.pingIntervalMs),
+    ROBOT_SOCKET_MISSED_PINGS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(ROBOT_SOCKET_DEFAULTS.missedPings),
+    ROBOT_SOCKET_HELLO_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(ROBOT_SOCKET_DEFAULTS.helloTimeoutMs),
+
+    LIVE_TICKET_TTL_MS: z.coerce.number().int().positive().default(30_000),
+    // Same as the access token: a panel connection never outlives the permissions it was opened with by much.
+    LIVE_SOCKET_MAX_AGE_MS: z.coerce.number().int().positive().default(900_000),
   })
   .refine(
     (data) =>

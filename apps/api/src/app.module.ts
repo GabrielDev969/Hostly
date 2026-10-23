@@ -35,6 +35,8 @@ import { OrganizationsModule } from '@modules/organizations/organizations.module
 import { ClientsModule } from '@modules/clients/clients.module';
 import { SitesModule } from '@modules/sites/sites.module';
 import { RobotsModule } from '@modules/robots/robots.module';
+import { LiveModule } from '@modules/live/live.module';
+import { RobotLinkModule } from '@modules/robot-link/robot-link.module';
 import { MaintenanceModule } from '@shared/maintenance/maintenance.module';
 import { TenantContextMiddleware } from '@shared/tenancy/tenant-context.middleware';
 
@@ -82,6 +84,8 @@ import { TenantContextMiddleware } from '@shared/tenancy/tenant-context.middlewa
     ClientsModule,
     SitesModule,
     RobotsModule,
+    LiveModule,
+    RobotLinkModule,
     AuditModule,
     HealthModule,
     WellKnownModule,

@@ -3,11 +3,12 @@ import { UsersModule } from '@modules/users/users.module';
 import { SessionsModule } from '@modules/sessions/sessions.module';
 import { AuthModule } from '@modules/auth/auth.module';
 import { AuditModule } from '@modules/audit/audit.module';
+import { RobotLinkModule } from '@modules/robot-link/robot-link.module';
 import { MaintenanceProcessor } from './maintenance.processor';
 import { MaintenanceScheduler } from './maintenance.scheduler';
 
 @Module({
-  imports: [UsersModule, SessionsModule, AuthModule, AuditModule],
+  imports: [UsersModule, SessionsModule, AuthModule, AuditModule, RobotLinkModule],
   providers: [MaintenanceProcessor, MaintenanceScheduler],
 })
 export class MaintenanceModule {}

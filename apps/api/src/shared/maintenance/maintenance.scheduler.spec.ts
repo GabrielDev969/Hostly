@@ -5,10 +5,11 @@ import {
   CLEANUP_EXPIRED_SESSIONS_JOB,
   CLEANUP_EXPIRED_TOKENS_JOB,
   CLEANUP_OLD_AUDIT_LOGS_JOB,
+  CLEANUP_OLD_TELEMETRY_JOB,
 } from './maintenance.jobs';
 
 describe('MaintenanceScheduler', () => {
-  it('schedules all four daily repeatable jobs on bootstrap with stable jobIds', async () => {
+  it('schedules all five daily repeatable jobs on bootstrap with stable jobIds', async () => {
     const queue = { add: jest.fn().mockResolvedValue(undefined) };
     const scheduler = new MaintenanceScheduler(queue as unknown as Queue);
 
@@ -19,6 +20,7 @@ describe('MaintenanceScheduler', () => {
       CLEANUP_EXPIRED_SESSIONS_JOB,
       CLEANUP_EXPIRED_TOKENS_JOB,
       CLEANUP_OLD_AUDIT_LOGS_JOB,
+      CLEANUP_OLD_TELEMETRY_JOB,
     ];
 
     expect(queue.add).toHaveBeenCalledTimes(expected.length);

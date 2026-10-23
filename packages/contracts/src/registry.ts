@@ -1,3 +1,9 @@
+import {
+  liveEventSchema,
+  liveRobotOfflineSchema,
+  liveRobotOnlineSchema,
+  liveRobotTelemetrySchema,
+} from './live/events.ts';
 import { mapPointsRequestSchema, mapPointsResponseSchema } from './map-points.ts';
 import {
   pairPollRequestSchema,
@@ -24,6 +30,10 @@ export const contractSchemas = {
   'ws.pong': pongMessageSchema,
   'ws.robot-to-cloud': robotToCloudMessageSchema,
   'ws.cloud-to-robot': cloudToRobotMessageSchema,
+  'live.robot-online': liveRobotOnlineSchema,
+  'live.robot-offline': liveRobotOfflineSchema,
+  'live.robot-telemetry': liveRobotTelemetrySchema,
+  'live.event': liveEventSchema,
 };
 
 export type ContractName = keyof typeof contractSchemas;

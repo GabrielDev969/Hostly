@@ -5,13 +5,14 @@ import { describe, it } from 'node:test';
 import {
   cloudToRobotMessageSchema,
   contractSchemas,
+  liveEventSchema,
   robotToCloudMessageSchema,
   type ContractName,
 } from '../src/index.ts';
 
 const fixturesDir = join(import.meta.dirname, '..', 'fixtures');
 // Unions are covered by the fixtures of each message they join.
-const unions = new Set<ContractName>(['ws.robot-to-cloud', 'ws.cloud-to-robot']);
+const unions = new Set<ContractName>(['ws.robot-to-cloud', 'ws.cloud-to-robot', 'live.event']);
 
 function readFixtures(name: string, kind: 'valid' | 'invalid'): [string, unknown][] {
   const dir = join(fixturesDir, name, kind);
@@ -67,6 +68,14 @@ describe('fixtures', () => {
     for (const name of ['ws.ping', 'ws.pong']) {
       for (const [file, data] of readFixtures(name, 'valid')) {
         assert.ok(cloudToRobotMessageSchema.safeParse(data).success, `${name}/valid/${file}`);
+      }
+    }
+  });
+
+  it('accepts every valid live event in the live union', () => {
+    for (const name of ['live.robot-online', 'live.robot-offline', 'live.robot-telemetry']) {
+      for (const [file, data] of readFixtures(name, 'valid')) {
+        assert.ok(liveEventSchema.safeParse(data).success, `${name}/valid/${file}`);
       }
     }
   });

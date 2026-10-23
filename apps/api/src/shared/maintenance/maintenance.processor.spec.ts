@@ -5,11 +5,13 @@ import {
   CLEANUP_EXPIRED_SESSIONS_JOB,
   CLEANUP_EXPIRED_TOKENS_JOB,
   CLEANUP_OLD_AUDIT_LOGS_JOB,
+  CLEANUP_OLD_TELEMETRY_JOB,
 } from './maintenance.jobs';
 import { AnonymizeExpiredUsersUseCase } from '@modules/users/use-cases/anonymize-expired-users.use-case';
 import { CleanupExpiredSessionsUseCase } from '@modules/sessions/use-cases/cleanup-expired-sessions.use-case';
 import { CleanupExpiredTokensUseCase } from '@modules/auth/use-cases/cleanup-expired-tokens.use-case';
 import { CleanupOldAuditLogsUseCase } from '@modules/audit/use-cases/cleanup-old-audit-logs.use-case';
+import { CleanupOldTelemetryUseCase } from '@modules/robot-link/use-cases/cleanup-old-telemetry.use-case';
 
 function setup() {
   const anonymize = {
@@ -24,13 +26,17 @@ function setup() {
   const cleanupAudit = {
     execute: jest.fn().mockResolvedValue({ deleted: 0 }),
   } as unknown as jest.Mocked<CleanupOldAuditLogsUseCase>;
+  const cleanupTelemetry = {
+    execute: jest.fn().mockResolvedValue({ deleted: 0 }),
+  } as unknown as jest.Mocked<CleanupOldTelemetryUseCase>;
   const processor = new MaintenanceProcessor(
     anonymize,
     cleanupSessions,
     cleanupTokens,
     cleanupAudit,
+    cleanupTelemetry,
   );
-  return { processor, anonymize, cleanupSessions, cleanupTokens, cleanupAudit };
+  return { processor, anonymize, cleanupSessions, cleanupTokens, cleanupAudit, cleanupTelemetry };
 }
 
 describe('MaintenanceProcessor', () => {
@@ -56,6 +62,12 @@ describe('MaintenanceProcessor', () => {
     const { processor, cleanupAudit } = setup();
     await processor.process({ name: CLEANUP_OLD_AUDIT_LOGS_JOB } as Job);
     expect(cleanupAudit.execute).toHaveBeenCalled();
+  });
+
+  it('routes cleanup-old-telemetry to CleanupOldTelemetryUseCase', async () => {
+    const { processor, cleanupTelemetry } = setup();
+    await processor.process({ name: CLEANUP_OLD_TELEMETRY_JOB } as Job);
+    expect(cleanupTelemetry.execute).toHaveBeenCalled();
   });
 
   it('ignores unknown jobs without throwing', async () => {

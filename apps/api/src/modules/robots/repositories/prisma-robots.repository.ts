@@ -1,8 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { Robot as RobotRow } from '@prisma/client';
 import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
-import { Robot } from '../entities/robot.entity';
+import { Robot, RobotLastTelemetry } from '../entities/robot.entity';
 import { RobotsFilter, RobotsRepository, UpdateRobotData } from './robots.repository.interface';
+
+// The columns are written together, from one telemetry message.
+function lastTelemetry(raw: RobotRow): RobotLastTelemetry | null {
+  if (!raw.telemetryAt || !raw.mode || raw.emergency === null) return null;
+  return {
+    at: raw.telemetryAt,
+    battery: raw.battery,
+    charging: raw.charging,
+    pose:
+      raw.poseX !== null && raw.poseY !== null && raw.poseTheta !== null
+        ? { x: raw.poseX, y: raw.poseY, theta: raw.poseTheta }
+        : null,
+    mode: raw.mode,
+    emergency: raw.emergency,
+    nowPlayingAssetId: raw.nowPlayingAssetId,
+  };
+}
 
 export function toRobot(raw: RobotRow): Robot {
   return {
@@ -15,7 +32,11 @@ export function toRobot(raw: RobotRow): Robot {
     name: raw.name,
     romVersion: raw.romVersion,
     appVersion: raw.appVersion,
+    manifestVersion: raw.manifestVersion,
     status: raw.status,
+    online: raw.online,
+    lastSeenAt: raw.lastSeenAt,
+    telemetry: lastTelemetry(raw),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
   };

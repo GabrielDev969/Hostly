@@ -6,6 +6,8 @@ import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { env } from './config/env.config';
+import { corsOrigins } from './config/cors.config';
+import { WsAdapter } from '@nestjs/platform-ws';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
@@ -16,11 +18,12 @@ async function bootstrap() {
   app.set('trust proxy', env.TRUST_PROXY);
   app.enableShutdownHooks();
   app.useLogger(app.get(Logger));
+  app.useWebSocketAdapter(new WsAdapter(app));
   app.use(helmet());
   app.use(cookieParser());
 
   app.enableCors({
-    origin: env.CORS_ORIGINS ?? ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    origin: corsOrigins,
     credentials: true,
   });
 

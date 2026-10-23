@@ -14,6 +14,7 @@ import {
 } from './services/pairing-rate-limiter.service';
 import { PairingCodesService } from './services/pairing-codes.service';
 import { RobotAuthService } from './services/robot-auth.service';
+import { RobotTokenEvents } from './services/robot-token-events.service';
 import { DevicePairingController } from './http/device-pairing.controller';
 import { RobotPairingsController } from './http/robot-pairings.controller';
 import { RobotsController } from './http/robots.controller';
@@ -49,6 +50,7 @@ import { RevokeRobotUseCase } from './use-cases/revoke-robot.use-case';
     PairingRateLimiter,
     PairingCodesService,
     RobotAuthService,
+    RobotTokenEvents,
     StartPairingUseCase,
     PollPairingUseCase,
     LookupPairingUseCase,
@@ -59,6 +61,6 @@ import { RevokeRobotUseCase } from './use-cases/revoke-robot.use-case';
     MoveRobotUseCase,
     RevokeRobotUseCase,
   ],
-  exports: [RobotAuthService],
+  exports: [RobotAuthService, RobotTokenEvents],
 })
 export class RobotsModule {}
