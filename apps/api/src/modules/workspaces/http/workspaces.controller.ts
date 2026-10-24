@@ -77,8 +77,7 @@ export class WorkspacesController {
     return this.listWorkspaces.execute(user.id);
   }
 
-  // ParseUUIDPipe turns a static segment such as `features` into a 400 instead of answering the workspace
-  // from the x-workspace-id header.
+  // Second layer: the WorkspaceGuard already turns a static segment such as `features` into a 400.
   @Get(':workspaceId')
   @UseGuards(WorkspaceGuard, PermissionsGuard)
   @RequirePermissions(PERMISSIONS.WORKSPACE.READ)

@@ -1,7 +1,14 @@
 import { INestApplication } from '@nestjs/common';
+import http from 'http';
+import type { AddressInfo } from 'net';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { startTestDatabase, stopTestDatabase, resetDatabase } from './helpers/test-database';
+import {
+  startTestDatabase,
+  stopTestDatabase,
+  resetDatabase,
+  getPrisma,
+} from './helpers/test-database';
 import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
@@ -166,5 +173,125 @@ describe('Workspaces flow (e2e)', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
     expect(list.body).toEqual([]);
+  });
+
+  describe('x-workspace-id and :workspaceId disagree', () => {
+    const MISMATCH = 'x-workspace-id does not match the workspace in the URL';
+
+    // Jane owns A, Bob owns B and is not a member of A, root is a super admin of neither.
+    async function twoWorkspaces() {
+      const jane = await registerAndLogin();
+      const a = await provisionOperator(app, 'jane@example.com', { name: 'Workspace A' });
+      const bob = await registerAndLogin({ email: 'bob@example.com', name: 'Bob' });
+      const b = await provisionOperator(app, 'bob@example.com', { name: 'Workspace B' });
+      const root = await superAdminToken();
+      return {
+        a,
+        b,
+        tokens: { jane: jane.accessToken, bob: bob.accessToken, root },
+      };
+    }
+
+    async function expectUntouched(a: string, b: string) {
+      const rows = await getPrisma().workspace.findMany({
+        where: { id: { in: [a, b] } },
+        select: { id: true, name: true, deletedAt: true },
+      });
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          { id: a, name: 'Workspace A', deletedAt: null },
+          { id: b, name: 'Workspace B', deletedAt: null },
+        ]),
+      );
+      expect(rows).toHaveLength(2);
+      const audits = await getPrisma().auditLog.count({
+        where: { action: { in: ['workspace.updated', 'workspace.deleted'] } },
+      });
+      expect(audits).toBe(0);
+    }
+
+    it.each(['jane', 'bob', 'root'] as const)(
+      'PATCH /workspaces/A with header B is refused for %s before any membership check',
+      async (who) => {
+        const { a, b, tokens } = await twoWorkspaces();
+
+        const res = await request(server)
+          .patch(`/api/v1/workspaces/${a}`)
+          .set('Authorization', `Bearer ${tokens[who]}`)
+          .set('x-workspace-id', b)
+          .send({ name: 'Renamed via A' })
+          .expect(400);
+
+        expect(res.body.message).toBe(MISMATCH);
+        await expectUntouched(a, b);
+      },
+    );
+
+    it.each(['bob', 'root'] as const)(
+      'DELETE /workspaces/A with header B is refused for %s',
+      async (who) => {
+        const { a, b, tokens } = await twoWorkspaces();
+
+        const res = await request(server)
+          .delete(`/api/v1/workspaces/${a}`)
+          .set('Authorization', `Bearer ${tokens[who]}`)
+          .set('x-workspace-id', b)
+          .expect(400);
+
+        expect(res.body.message).toBe(MISMATCH);
+        await expectUntouched(a, b);
+      },
+    );
+
+    // Superagent only types an array header for Cookie, so the repeated header goes through http.request.
+    function getWithRepeatedHeader(path: string, token: string, values: string[]): Promise<number> {
+      const { port } = (app.getHttpServer() as http.Server).address() as AddressInfo;
+      return new Promise((resolve, reject) => {
+        const req = http.request(
+          {
+            host: '127.0.0.1',
+            port,
+            path,
+            headers: { Authorization: `Bearer ${token}`, 'x-workspace-id': values },
+          },
+          (res) => {
+            res.resume();
+            resolve(res.statusCode ?? 0);
+          },
+        );
+        req.on('error', reject);
+        req.end();
+      });
+    }
+
+    // Node joins a repeated header into "A, B", which is not a UUID.
+    it('refuses a repeated x-workspace-id header', async () => {
+      const { a, b, tokens } = await twoWorkspaces();
+
+      expect(await getWithRepeatedHeader('/api/v1/clients', tokens.jane, [a, b])).toBe(400);
+      expect(await getWithRepeatedHeader('/api/v1/clients', tokens.jane, [a, a])).toBe(400);
+      expect(await getWithRepeatedHeader('/api/v1/clients', tokens.jane, [a])).toBe(200);
+    });
+
+    it('still accepts the path alone, the header alone and both equal', async () => {
+      const { a, tokens } = await twoWorkspaces();
+      const auth = { Authorization: `Bearer ${tokens.jane}` };
+
+      await request(server)
+        .patch(`/api/v1/workspaces/${a}`)
+        .set(auth)
+        .send({ name: 'Path only' })
+        .expect(200);
+      await request(server)
+        .patch(`/api/v1/workspaces/${a}`)
+        .set(auth)
+        .set('x-workspace-id', a)
+        .send({ name: 'Both equal' })
+        .expect(200);
+      await request(server).get('/api/v1/clients').set(auth).set('x-workspace-id', a).expect(200);
+
+      const workspace = await getPrisma().workspace.findUniqueOrThrow({ where: { id: a } });
+      expect(workspace.name).toBe('Both equal');
+    });
   });
 });
