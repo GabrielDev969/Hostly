@@ -1,5 +1,5 @@
 import { createCache } from 'cache-manager';
-import { PrismaService } from '@shared/database/prisma.service';
+import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 import { CacheService } from '@shared/cache/cache.service';
 import { PrismaPermissionsRepository } from './prisma-permissions.repository';
 
@@ -34,7 +34,10 @@ describe('PrismaPermissionsRepository', () => {
       },
     };
     cacheService = new CacheService(createCache());
-    repo = new PrismaPermissionsRepository(prisma as unknown as PrismaService, cacheService);
+    repo = new PrismaPermissionsRepository(
+      { client: prisma } as unknown as ScopedPrismaService,
+      cacheService,
+    );
   });
 
   describe('with cache enabled — exercises @Cacheable key arrows', () => {

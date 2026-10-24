@@ -11,10 +11,13 @@ import { PrismaWorkspacesRepository } from '../src/modules/workspaces/repositori
 import { PrismaUsersRepository } from '../src/modules/users/repositories/prisma-users.repository';
 import { PrismaService } from '../src/shared/database/prisma.service';
 import { CacheService } from '../src/shared/cache/cache.service';
+import { ScopedPrismaService } from '../src/shared/tenancy/scoped-prisma.service';
+import { inScope } from './helpers/tenant-scope';
 import { PERMISSIONS } from '../src/modules/rbac/constants/permissions';
 import { UnknownPermissionsError } from '../src/modules/rbac/errors/unknown-permissions.error';
 
 describe('PrismaRolesRepository (integration)', () => {
+  let repository: PrismaRolesRepository;
   let roles: PrismaRolesRepository;
   let workspaces: PrismaWorkspacesRepository;
   let users: PrismaUsersRepository;
@@ -24,7 +27,7 @@ describe('PrismaRolesRepository (integration)', () => {
     await startTestDatabase();
     const prisma = getPrisma() as unknown as PrismaService;
     const cacheService = new CacheService(createCache());
-    roles = new PrismaRolesRepository(prisma, cacheService);
+    repository = new PrismaRolesRepository(prisma, new ScopedPrismaService(prisma), cacheService);
     workspaces = new PrismaWorkspacesRepository(prisma, cacheService);
     users = new PrismaUsersRepository(prisma, cacheService);
   });
@@ -58,6 +61,13 @@ describe('PrismaRolesRepository (integration)', () => {
       ],
     });
     workspaceId = result.workspace.id;
+    // As the WorkspaceGuard would: the scoped client pins every role query to this workspace.
+    roles = inScope(repository, {
+      organizationId: result.workspace.organizationId,
+      workspaceId,
+      clientId: null,
+      advertiserId: null,
+    });
   });
 
   it('creates a role with the given permissions and rejects unknown keys', async () => {

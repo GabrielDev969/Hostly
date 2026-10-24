@@ -26,6 +26,6 @@ export class DeleteRoleUseCase {
         `Role is assigned to ${inUse} member(s); reassign them before deleting`,
       );
 
-    await this.roles.delete(input.id);
+    await this.roles.delete(input.id, input.workspaceId);
   }
 }

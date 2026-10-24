@@ -1,5 +1,6 @@
 import { createCache } from 'cache-manager';
 import { PrismaService } from '@shared/database/prisma.service';
+import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 import { CacheService } from '@shared/cache/cache.service';
 import { PrismaRolesRepository } from './prisma-roles.repository';
 import { UnknownPermissionsError } from '../errors/unknown-permissions.error';
@@ -26,11 +27,14 @@ type Tx = {
   rolePermission: RolePermissionClient;
 };
 
-type PrismaMock = {
-  permission: PermissionClient;
+type ScopedMock = {
   role: RoleClient;
-  workspaceMember: WorkspaceMemberClient;
   $transaction: jest.Mock;
+};
+
+type RawMock = {
+  role: { delete: jest.Mock };
+  workspaceMember: WorkspaceMemberClient;
 };
 
 const baseRoleRow = {
@@ -54,7 +58,8 @@ const baseRoleRow = {
 };
 
 describe('PrismaRolesRepository', () => {
-  let prisma: PrismaMock;
+  let prisma: ScopedMock;
+  let raw: RawMock;
   let tx: Tx;
   let repo: PrismaRolesRepository;
 
@@ -76,7 +81,6 @@ describe('PrismaRolesRepository', () => {
       },
     };
     prisma = {
-      permission: { findMany: jest.fn() },
       role: {
         create: jest.fn(),
         findUnique: jest.fn(),
@@ -86,19 +90,24 @@ describe('PrismaRolesRepository', () => {
         update: jest.fn(),
         delete: jest.fn(),
       },
-      workspaceMember: { count: jest.fn() },
       $transaction: jest.fn(async (fn: (txArg: Tx) => Promise<unknown>) => fn(tx)),
     };
+    raw = { role: { delete: jest.fn() }, workspaceMember: { count: jest.fn() } };
     repo = new PrismaRolesRepository(
-      prisma as unknown as PrismaService,
+      raw as unknown as PrismaService,
+      { client: prisma } as unknown as ScopedPrismaService,
       new CacheService(createCache()),
     );
   });
 
   describe('create', () => {
-    it('creates the role with mapped permissions', async () => {
-      prisma.permission.findMany.mockResolvedValue([{ id: 'p1', key: 'user:read' }]);
-      prisma.role.create.mockResolvedValue(baseRoleRow);
+    beforeEach(() => {
+      tx.role.create.mockResolvedValue({ id: 'r1' });
+      tx.role.findUniqueOrThrow.mockResolvedValue(baseRoleRow);
+    });
+
+    it('creates the role, then links its permissions without a nested write', async () => {
+      tx.permission.findMany.mockResolvedValue([{ id: 'p1', key: 'user:read' }]);
 
       const result = await repo.create({
         name: 'Admin',
@@ -107,20 +116,25 @@ describe('PrismaRolesRepository', () => {
         permissionKeys: ['user:read'],
       });
 
-      expect(prisma.permission.findMany).toHaveBeenCalledWith({
+      expect(tx.permission.findMany).toHaveBeenCalledWith({
         where: {
           key: { in: ['user:read'] },
           OR: [{ workspaceId: null }, { workspaceId: 'w1' }],
         },
       });
-      expect(prisma.role.create).toHaveBeenCalledWith({
+      expect(tx.role.create).toHaveBeenCalledWith({
         data: {
           name: 'Admin',
           description: 'Administrator',
           workspaceId: 'w1',
           isSystem: false,
-          permissions: { create: [{ permissionId: 'p1' }] },
         },
+      });
+      expect(tx.rolePermission.createMany).toHaveBeenCalledWith({
+        data: [{ roleId: 'r1', permissionId: 'p1' }],
+      });
+      expect(tx.role.findUniqueOrThrow).toHaveBeenCalledWith({
+        where: { id: 'r1' },
         include: { permissions: { include: { permission: true } } },
       });
       expect(result.id).toBe('r1');
@@ -130,8 +144,7 @@ describe('PrismaRolesRepository', () => {
     });
 
     it('respects isSystem when explicitly true', async () => {
-      prisma.permission.findMany.mockResolvedValue([{ id: 'p1', key: 'user:read' }]);
-      prisma.role.create.mockResolvedValue(baseRoleRow);
+      tx.permission.findMany.mockResolvedValue([{ id: 'p1', key: 'user:read' }]);
 
       await repo.create({
         name: 'Sys',
@@ -140,7 +153,7 @@ describe('PrismaRolesRepository', () => {
         permissionKeys: ['user:read'],
       });
 
-      expect(prisma.role.create).toHaveBeenCalledWith(
+      expect(tx.role.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ isSystem: true }),
         }),
@@ -148,7 +161,7 @@ describe('PrismaRolesRepository', () => {
     });
 
     it('throws UnknownPermissionsError listing missing permission keys', async () => {
-      prisma.permission.findMany.mockResolvedValue([{ id: 'p1', key: 'user:read' }]);
+      tx.permission.findMany.mockResolvedValue([{ id: 'p1', key: 'user:read' }]);
 
       const promise = repo.create({
         name: 'Admin',
@@ -159,7 +172,7 @@ describe('PrismaRolesRepository', () => {
       await expect(promise).rejects.toMatchObject({
         missing: ['user:nuke', 'user:beam'],
       });
-      expect(prisma.role.create).not.toHaveBeenCalled();
+      expect(tx.role.create).not.toHaveBeenCalled();
     });
   });
 
@@ -298,18 +311,18 @@ describe('PrismaRolesRepository', () => {
   });
 
   describe('delete', () => {
-    it('removes the role by id', async () => {
-      prisma.role.delete.mockResolvedValue(baseRoleRow);
-      await repo.delete('r1');
-      expect(prisma.role.delete).toHaveBeenCalledWith({ where: { id: 'r1' } });
+    it('removes the role by id, pinned to its workspace', async () => {
+      raw.role.delete.mockResolvedValue(baseRoleRow);
+      await repo.delete('r1', 'w1');
+      expect(raw.role.delete).toHaveBeenCalledWith({ where: { id: 'r1', workspaceId: 'w1' } });
     });
   });
 
   describe('countMembersUsingRole', () => {
     it('counts workspace members for the given role', async () => {
-      prisma.workspaceMember.count.mockResolvedValue(3);
+      raw.workspaceMember.count.mockResolvedValue(3);
       const count = await repo.countMembersUsingRole('r1');
-      expect(prisma.workspaceMember.count).toHaveBeenCalledWith({
+      expect(raw.workspaceMember.count).toHaveBeenCalledWith({
         where: { roleId: 'r1' },
       });
       expect(count).toBe(3);

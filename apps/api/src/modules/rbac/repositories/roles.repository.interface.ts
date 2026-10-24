@@ -34,7 +34,7 @@ export abstract class RolesRepository {
   abstract findManyByWorkspace(workspaceId: string): Promise<RoleWithPermissions[]>;
   abstract findByNameInWorkspace(name: string, workspaceId: string): Promise<Role | null>;
   abstract update(id: string, data: UpdateRoleData): Promise<RoleWithPermissions>;
-  abstract delete(id: string): Promise<void>;
+  abstract delete(id: string, workspaceId: string): Promise<void>;
   abstract countMembersUsingRole(roleId: string): Promise<number>;
   abstract findMembershipScopesUsingRole(roleId: string): Promise<MembershipScope[]>;
 }

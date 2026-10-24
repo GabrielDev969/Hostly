@@ -74,3 +74,18 @@ export const SCOPED_MODELS: Readonly<Partial<Record<string, ScopedModel>>> = {
     advertiserField: null,
   },
 };
+
+export interface WorkspaceKeyedModel {
+  // Rows with a null workspaceId are global: every scope reads them, only system work writes them.
+  globalRows?: boolean;
+}
+
+// Models placed in a workspace by workspaceId alone, with no client dimension. They stay out of
+// SCOPED_MODELS because to-one relations reach them from scoped rows (WorkspaceMember.role,
+// RolePermission.permission) and client users read them; the rewriter pins their own queries to
+// the scope's workspace instead. tenant-scope.registry.spec.ts fails if a workspaceId model is missing.
+export const WORKSPACE_KEYED_MODELS: Readonly<Partial<Record<string, WorkspaceKeyedModel>>> = {
+  Role: {},
+  Permission: { globalRows: true },
+  WorkspaceFeatureFlag: {},
+};
