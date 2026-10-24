@@ -6111,16 +6111,16 @@
         ]
       }
     },
-    "/api/v1/workspaces/features": {
+    "/api/v1/workspaces/{workspaceId}/features": {
       "get": {
         "operationId": "WorkspaceFeatureFlagsController_list_v1",
         "parameters": [
           {
-            "name": "x-workspace-id",
-            "in": "header",
-            "description": "ID of the workspace context",
+            "name": "workspaceId",
             "required": true,
+            "in": "path",
             "schema": {
+              "format": "uuid",
               "type": "string"
             }
           }
