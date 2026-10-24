@@ -153,9 +153,14 @@ export class PrismaRolesRepository extends RolesRepository {
     });
   }
 
+  // Invitations before the role: accepting locks the invitation and then the role, so this order
+  // turns a race into a refused delete (the foreign keys) instead of a deadlock (apps/api/CLAUDE.md).
   @InvalidateCache(CACHE_NS.roles, CACHE_NS.workspaceMembers)
   async delete(id: string, workspaceId: string): Promise<void> {
-    await this.prisma.role.delete({ where: { id, workspaceId } });
+    await this.prisma.$transaction([
+      this.prisma.invitation.deleteMany({ where: { roleId: id, workspaceId } }),
+      this.prisma.role.delete({ where: { id, workspaceId } }),
+    ]);
   }
 
   async countMembersUsingRole(roleId: string): Promise<number> {

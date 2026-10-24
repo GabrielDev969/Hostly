@@ -1,4 +1,5 @@
 import { ForbiddenException, INestApplication } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
@@ -822,6 +823,61 @@ describe('Tenant scope (e2e)', () => {
 
       expect(await prisma.invitation.count()).toBe(invitationsBefore);
       expect(await prisma.rolePermission.count({ where: { roleId: roleX.id } })).toBe(0);
+    });
+
+    // The two writes from #110: the foreign key carries workspaceId, so a membership or an
+    // invitation of workspace X cannot hold a role of Y, whatever client writes it.
+    it("never lets a membership or an invitation hold another workspace's role", async () => {
+      const prisma = getPrisma();
+      const inviter = await prisma.user.findUniqueOrThrow({ where: { email: USERS.opAdminX } });
+      const member = await prisma.workspaceMember.findFirstOrThrow({
+        where: { workspaceId: workspaceX, user: { email: USERS.opStaffX } },
+      });
+      const roleY = await prisma.role.findFirstOrThrow({ where: { workspaceId: workspaceY } });
+      const invitation = (roleId: string) => ({
+        email: 'foreign-role@example.com',
+        workspaceId: workspaceX,
+        roleId,
+        invitedById: inviter.id,
+        tokenHash: randomUUID(),
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      const snapshot = async () => ({
+        member: await prisma.workspaceMember.findUniqueOrThrow({ where: { id: member.id } }),
+        invitations: await prisma.invitation.count(),
+      });
+      const before = await snapshot();
+
+      const messages: string[][] = [];
+      for (const roleId of [roleY.id, randomUUID()]) {
+        const refused = await Promise.all(
+          [
+            asOperatorX(() =>
+              scoped.client.workspaceMember.update({ where: { id: member.id }, data: { roleId } }),
+            ),
+            asOperatorX(() => scoped.client.invitation.create({ data: invitation(roleId) })),
+            // The raw client, which role changes and ownership transfers write through.
+            prisma.workspaceMember.update({ where: { id: member.id }, data: { roleId } }),
+            prisma.invitation.create({ data: invitation(roleId) }),
+          ].map((write) =>
+            write.then(
+              () => null,
+              (error: unknown) => error,
+            ),
+          ),
+        );
+        for (const error of refused) {
+          expect(error).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+          expect(error).toMatchObject({ code: 'P2003' });
+        }
+        messages.push(refused.map((error) => (error as Error).message));
+      }
+
+      // A role of Y fails exactly like a role that exists nowhere: nothing tells Y's roles apart.
+      expect(messages[0]).toEqual(messages[1]);
+      expect(messages.flat().join()).not.toContain(roleY.id);
+      expect(messages.flat().join()).not.toContain(workspaceY);
+      expect(await snapshot()).toEqual(before);
     });
   });
 

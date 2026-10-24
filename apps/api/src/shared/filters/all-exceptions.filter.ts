@@ -40,6 +40,21 @@ function isClientHttpError(err: unknown): err is Error & { status: number } {
   return typeof status === 'number' && status >= 400 && status < 500 && expose === true;
 }
 
+const FOREIGN_KEY_CONFLICT: NormalizedError = {
+  statusCode: 409,
+  error: statusText(409),
+  message: 'Foreign key constraint violated',
+};
+
+// ON DELETE RESTRICT refuses with 23001, which @prisma/adapter-pg throws raw instead of turning it
+// into P2003 like the 23503 of NO ACTION; it is the same foreign key refusal.
+const isRestrictViolation = (exception: unknown): boolean =>
+  exception instanceof Error &&
+  exception.name === 'DriverAdapterError' &&
+  typeof exception.cause === 'object' &&
+  exception.cause !== null &&
+  (exception.cause as { originalCode?: unknown }).originalCode === '23001';
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -90,6 +105,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
         error: statusText(exception.status),
         message: statusText(exception.status),
       };
+    }
+    if (isRestrictViolation(exception)) {
+      return FOREIGN_KEY_CONFLICT;
     }
     if (exception instanceof Prisma.PrismaClientValidationError) {
       return {
@@ -151,11 +169,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
           message: 'Record not found',
         };
       case 'P2003':
-        return {
-          statusCode: 409,
-          error: statusText(409),
-          message: 'Foreign key constraint violated',
-        };
+        return FOREIGN_KEY_CONFLICT;
       case 'P2014':
         return {
           statusCode: 400,

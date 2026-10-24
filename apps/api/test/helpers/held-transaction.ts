@@ -5,6 +5,8 @@ import { waitFor } from './fleet';
 export interface HeldTransaction {
   // Backend pid of the transaction, to find who waits on its locks.
   pid: number;
+  // Runs one more step inside the transaction, which keeps every lock it already holds.
+  run<T>(step: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T>;
   commit(): Promise<void>;
   // A no-op once committed, so it fits a finally.
   rollback(): Promise<void>;
@@ -12,13 +14,23 @@ export interface HeldTransaction {
 
 class RolledBack extends Error {}
 
+type Message = { release: boolean } | { step: (tx: Prisma.TransactionClient) => Promise<void> };
+
 // Runs lock in a transaction and keeps it open, holding its row locks, until commit or rollback.
 // The transaction timeout is the hard deadline: a failed test never leaves it open.
 export async function holdTransaction(
   lock: (tx: Prisma.TransactionClient) => Promise<unknown>,
 ): Promise<HeldTransaction> {
-  let release!: (commit: boolean) => void;
-  const released = new Promise<boolean>((resolve) => (release = resolve));
+  const inbox: Message[] = [];
+  let wake: (() => void) | null = null;
+  const post = (message: Message): void => {
+    inbox.push(message);
+    wake?.();
+  };
+  const receive = async (): Promise<Message> => {
+    while (inbox.length === 0) await new Promise<void>((resolve) => (wake = resolve));
+    return inbox.shift()!;
+  };
   let held!: (pid: number) => void;
   const holding = new Promise<number>((resolve) => (held = resolve));
 
@@ -28,7 +40,12 @@ export async function holdTransaction(
         await lock(tx);
         const [row] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
         held(row!.pid);
-        if (!(await released)) throw new RolledBack();
+        for (;;) {
+          const message = await receive();
+          if ('step' in message) await message.step(tx);
+          else if (message.release) return;
+          else throw new RolledBack();
+        }
       },
       { timeout: 10_000 },
     )
@@ -44,12 +61,23 @@ export async function holdTransaction(
   ]);
   return {
     pid,
+    run: <T>(step: (tx: Prisma.TransactionClient) => Promise<T>) =>
+      new Promise<T>((resolve) => {
+        post({
+          step: async (tx) => {
+            const result = step(tx);
+            resolve(result);
+            // A failed step aborts the transaction in Postgres, so it ends the transaction here too.
+            await result;
+          },
+        });
+      }),
     commit: async () => {
-      release(true);
+      post({ release: true });
       await done;
     },
     rollback: async () => {
-      release(false);
+      post({ release: false });
       await done;
     },
   };

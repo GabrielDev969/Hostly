@@ -16,7 +16,7 @@ const RAW_ACCESS_ALLOWLIST: Record<string, string> = {
   'src/modules/audit/repositories/prisma-audit-logs.repository.ts':
     'the append-only hash chain, retention and verification span every tenant; listing uses the scoped client',
   'src/modules/rbac/repositories/prisma-roles.repository.ts':
-    'counts memberships of a role to block deleting a role that is still in use, and deletes the role (pinned to its workspace), which the scoped client refuses because Role.members reaches WorkspaceMember; the rest uses the scoped client',
+    'counts memberships of a role to block deleting a role that is still in use, and deletes the role with its invitations (pinned to its workspace) in one transaction, which the scoped client refuses because Role.members reaches WorkspaceMember; the rest uses the scoped client',
   'src/modules/users/repositories/prisma-users.repository.ts':
     'user listings filter by membership; only operator-scoped memberships can hold user:* (see PERMISSION_CEILING)',
   'src/modules/invitations/repositories/prisma-invitations.repository.ts':
@@ -66,6 +66,38 @@ function parseSchemaRelations(): Map<string, Map<string, boolean>> {
   return result;
 }
 
+interface SchemaModel {
+  columns: string[];
+  relations: { target: string; fields: string[]; references: string[] }[];
+}
+
+function parseSchemaModels(): Map<string, SchemaModel> {
+  const schema = readFileSync(join(API_ROOT, 'prisma', 'schema.prisma'), 'utf8');
+  const list = (args: string, key: string): string[] =>
+    (args.match(new RegExp(`${key}:\\s*\\[([^\\]]*)\\]`))?.[1] ?? '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean);
+  const result = new Map<string, SchemaModel>();
+  for (const [, name, body] of schema.matchAll(/^model (\w+) \{([\s\S]*?)^\}/gm)) {
+    const model: SchemaModel = { columns: [], relations: [] };
+    for (const [, field, type, args] of body!.matchAll(
+      /^\s+(\w+)\s+(\w+)(?:\[\]|\?)?(?:.*?@relation\(([^)]*)\))?/gm,
+    )) {
+      model.columns.push(field!);
+      if (args !== undefined) {
+        model.relations.push({
+          target: type!,
+          fields: list(args, 'fields'),
+          references: list(args, 'references'),
+        });
+      }
+    }
+    result.set(name!, model);
+  }
+  return result;
+}
+
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
     const path = join(dir, entry);
@@ -109,6 +141,25 @@ describe('tenant scope registry', () => {
       'WorkspaceFeatureFlag',
     ]);
     expect(WORKSPACE_KEYED_MODELS.Permission?.globalRows).toBe(true);
+  });
+
+  // The foreign key carries workspaceId, so no client (scoped, raw or system work) can point a row
+  // at a role of another workspace, which the WorkspaceGuard would then turn into permissions.
+  it('keys every reference from a workspace row into a workspace-keyed model by the workspace too', () => {
+    const loose: string[] = [];
+    for (const [name, model] of parseSchemaModels()) {
+      if (!model.columns.includes('workspaceId')) continue;
+      for (const keyed of Object.keys(WORKSPACE_KEYED_MODELS)) {
+        const column = `${keyed[0]!.toLowerCase()}${keyed.slice(1)}Id`;
+        const relation = model.relations.find((r) => r.target === keyed);
+        if (!relation && !model.columns.includes(column)) continue;
+        const pinned =
+          relation?.fields.join() === `${column},workspaceId` &&
+          relation.references.join() === 'id,workspaceId';
+        if (!pinned) loose.push(`${name}.${column}`);
+      }
+    }
+    expect(loose).toEqual([]);
   });
 
   it('scopes clients, sites, robots and invitations by their client column', () => {

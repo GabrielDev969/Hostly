@@ -145,13 +145,15 @@ model WorkspaceMember {
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  role      Role      @relation(fields: [roleId], references: [id])
+  // Keyed by the workspace too, so a membership can only hold a role of its own workspace.
+  role      Role      @relation(fields: [roleId, workspaceId], references: [id, workspaceId], onDelete: Restrict, onUpdate: Restrict)
   client    Client?   @relation(fields: [clientId], references: [id], onDelete: Restrict)
 
   joinedAt DateTime @default(now())
 
   @@unique([userId, workspaceId])
   @@index([workspaceId])
+  @@index([roleId, workspaceId])
   @@index([clientId])
   @@index([advertiserId])
 }
@@ -169,6 +171,9 @@ model Invitation {
   acceptedAt  DateTime?
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  // NoAction: deleting a role deletes its invitations first (PrismaRolesRepository.delete), in the
+  // order accepting locks them, so a race refuses the delete instead of deadlocking.
+  role      Role      @relation(fields: [roleId, workspaceId], references: [id, workspaceId], onDelete: NoAction, onUpdate: Restrict)
   invitedBy User      @relation("InvitedBy", fields: [invitedById], references: [id])
   client    Client?   @relation(fields: [clientId], references: [id], onDelete: Restrict)
 
@@ -176,6 +181,7 @@ model Invitation {
 
   @@index([email])
   @@index([clientId])
+  @@index([roleId, workspaceId])
 }
 
 enum ClientStatus {
@@ -368,11 +374,14 @@ model Role {
   workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   permissions RolePermission[]
   members     WorkspaceMember[]
+  invitations Invitation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([workspaceId, name])
+  // Target of the composite foreign keys of WorkspaceMember and Invitation.
+  @@unique([id, workspaceId])
 }
 
 model Permission {

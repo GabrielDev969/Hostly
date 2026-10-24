@@ -13,6 +13,7 @@ import { seedPermissions } from './helpers/seed-permissions';
 import type { TestEmailDispatcher } from './helpers/test-email-dispatcher';
 import { registerAndVerify } from './helpers/auth-flow';
 import { createClient, provisionOperator } from './helpers/operator';
+import { holdTransaction, inFlight, waitUntilBlockedBy } from './helpers/held-transaction';
 
 describe('Invitations flow (e2e)', () => {
   let app: INestApplication;
@@ -332,6 +333,187 @@ describe('Invitations flow (e2e)', () => {
       await accept().expect(200);
       await accept().expect(400);
       expect(await memberships()).toHaveLength(1);
+    });
+  });
+
+  // Accepting locks the invitation, then the role (the membership's foreign key); deleting a role
+  // deletes its invitations before the role, in that same order, so no race deadlocks into a 500.
+  describe('racing a role delete', () => {
+    let inviterToken: string;
+    let workspaceId: string;
+    let roleId: string;
+    let invitationId: string;
+    let invitationToken: string;
+    let inviteeToken: string;
+
+    const asInviter = (req: request.Test) =>
+      req.set('Authorization', `Bearer ${inviterToken}`).set('x-workspace-id', workspaceId);
+    const deleteRole = () => asInviter(request(server).delete(`/api/v1/rbac/roles/${roleId}`));
+    const state = async () => {
+      const prisma = getPrisma();
+      return {
+        role: await prisma.role.count({ where: { id: roleId } }),
+        invitations: await prisma.invitation.findMany({
+          where: { roleId },
+          select: { email: true, acceptedAt: true },
+          orderBy: { email: 'asc' },
+        }),
+        members: await prisma.workspaceMember.count({ where: { roleId } }),
+      };
+    };
+    // A 409 from a foreign key names no row, no role and no workspace, not even in the stack sent
+    // outside production; only the path, the caller's own URL, carries the role id.
+    const expectBareConflict = (res: request.Response) => {
+      expect(res.status).toBe(409);
+      expect(res.body.message).toBe('Foreign key constraint violated');
+      const body = JSON.stringify({ ...res.body, path: undefined });
+      expect(body).not.toContain(roleId);
+      expect(body).not.toContain(workspaceId);
+    };
+    // What accepting does, up to the membership: close the invitation first.
+    const acceptLock = () =>
+      holdTransaction((tx) =>
+        tx.invitation.updateMany({ where: { id: invitationId }, data: { acceptedAt: new Date() } }),
+      );
+    // What deleting the role does: its invitations, then the role.
+    const deleteLock = () =>
+      holdTransaction(async (tx) => {
+        await tx.invitation.deleteMany({ where: { roleId, workspaceId } });
+        await tx.role.delete({ where: { id: roleId, workspaceId } });
+      });
+
+    beforeEach(async () => {
+      inviterToken = await registerAndLogin('inviter@example.com', 'Inviter');
+      workspaceId = await provisionOperator(app, 'inviter@example.com');
+      const role = await asInviter(request(server).post('/api/v1/rbac/roles'))
+        .send({ name: 'race-role', permissionKeys: ['workspace:read'] })
+        .expect(201);
+      roleId = role.body.id as string;
+      const invitation = await asInviter(request(server).post('/api/v1/invitations'))
+        .send({ email: 'invitee@example.com', roleId })
+        .expect(201);
+      invitationId = invitation.body.id as string;
+      invitationToken = emailDispatcher.tokenFor('invitee@example.com');
+      inviteeToken = await registerAndLogin('invitee@example.com', 'Invitee');
+    });
+
+    it('makes the delete wait for an invitation being accepted, then refuses it', async () => {
+      const invitee = await getPrisma().user.findUniqueOrThrow({
+        where: { email: 'invitee@example.com' },
+      });
+      const accepting = await acceptLock();
+      try {
+        const deleting = inFlight(deleteRole());
+        await waitUntilBlockedBy(accepting.pid);
+        // With the role locked first (a plain cascade), this insert would deadlock with the delete.
+        await accepting.run((tx) =>
+          tx.workspaceMember.create({ data: { userId: invitee.id, workspaceId, roleId } }),
+        );
+        expect(deleting.answered()).toBe(false);
+
+        await accepting.commit();
+        expectBareConflict(await deleting.response);
+        expect(await state()).toEqual({
+          role: 1,
+          invitations: [{ email: 'invitee@example.com', acceptedAt: expect.any(Date) }],
+          members: 1,
+        });
+      } finally {
+        await accepting.rollback();
+      }
+    });
+
+    it('lets the delete through, invitations and all, when the accept rolls back', async () => {
+      const accepting = await acceptLock();
+      try {
+        const deleting = inFlight(deleteRole());
+        await waitUntilBlockedBy(accepting.pid);
+
+        await accepting.rollback();
+        expect((await deleting.response).status).toBe(204);
+        expect(await state()).toEqual({ role: 0, invitations: [], members: 0 });
+      } finally {
+        await accepting.rollback();
+      }
+    });
+
+    it('turns an accept that loses to the delete into "no longer pending"', async () => {
+      const deleting = await deleteLock();
+      try {
+        const accepting = inFlight(
+          request(server)
+            .post('/api/v1/invitations/accept')
+            .set('Authorization', `Bearer ${inviteeToken}`)
+            .send({ token: invitationToken }),
+        );
+        await waitUntilBlockedBy(deleting.pid);
+        expect(accepting.answered()).toBe(false);
+
+        await deleting.commit();
+        const res = await accepting.response;
+        expect(res.status).toBe(400);
+        expect(res.body.message).toBe('Invitation is no longer pending');
+        expect(await state()).toEqual({ role: 0, invitations: [], members: 0 });
+      } finally {
+        await deleting.rollback();
+      }
+    });
+
+    it('makes the delete wait for an invitation being sent, then refuses it', async () => {
+      const inviter = await getPrisma().user.findUniqueOrThrow({
+        where: { email: 'inviter@example.com' },
+      });
+      // What sending does: insert the invitation, which holds the role through its foreign key.
+      const sending = await holdTransaction((tx) =>
+        tx.invitation.create({
+          data: {
+            email: 'late@example.com',
+            workspaceId,
+            roleId,
+            invitedById: inviter.id,
+            tokenHash: randomUUID(),
+            expiresAt: new Date(Date.now() + 60_000),
+          },
+        }),
+      );
+      try {
+        const deleting = inFlight(deleteRole());
+        await waitUntilBlockedBy(sending.pid);
+        expect(deleting.answered()).toBe(false);
+
+        await sending.commit();
+        expectBareConflict(await deleting.response);
+        expect(await state()).toEqual({
+          role: 1,
+          invitations: [
+            { email: 'invitee@example.com', acceptedAt: null },
+            { email: 'late@example.com', acceptedAt: null },
+          ],
+          members: 0,
+        });
+      } finally {
+        await sending.rollback();
+      }
+    });
+
+    it('makes an invitation being sent wait for the delete, then refuses it', async () => {
+      const deleting = await deleteLock();
+      try {
+        const sending = inFlight(
+          asInviter(request(server).post('/api/v1/invitations')).send({
+            email: 'late@example.com',
+            roleId,
+          }),
+        );
+        await waitUntilBlockedBy(deleting.pid);
+        expect(sending.answered()).toBe(false);
+
+        await deleting.commit();
+        expectBareConflict(await sending.response);
+        expect(await state()).toEqual({ role: 0, invitations: [], members: 0 });
+      } finally {
+        await deleting.rollback();
+      }
     });
   });
 });
