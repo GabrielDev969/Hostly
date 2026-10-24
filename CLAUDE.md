@@ -92,6 +92,13 @@ A API (`apps/api`) tem regras próprias em [`apps/api/CLAUDE.md`](apps/api/CLAUD
 existe: o worker entra no `pnpm dev` quando nascer (#30); `apps/robot` é Gradle, fora do pnpm, e os comandos dele chegam
 na #23.
 
+E-mail em dev: com `EMAIL_PROVIDER=log` (só dev e teste; a API não sobe com ele em produção), nada é enviado. O e-mail
+inteiro (para, assunto e texto) vai pra `hostly-mail/` dentro do tmp do sistema (`node -p "require('os').tmpdir()"`),
+numa pasta `0700` com arquivos `0600`, e os de mais de 7 dias saem a cada envio. O log `Mailer:Log` traz só o link com
+cada valor mascarado (`?token=1ee8…`), o fingerprint (`sha256:` + 12 hex do hash que o banco guarda) e o `file`. Prova
+à mão (convite, verificação ou redefinição): dispare o e-mail, copie o `file` do log e abra o link que está no arquivo.
+Pra limpar, apague a pasta.
+
 Painel (`apps/web`, `@hostly/web`): Next.js (App Router) + TanStack Query, lê o `.env` da raiz pelo `next.config.ts`.
 
 - Fala direto com a API (CORS com credentials), em `NEXT_PUBLIC_API_URL`. Painel e API ficam no mesmo site e em HTTPS

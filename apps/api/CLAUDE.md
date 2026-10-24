@@ -8,7 +8,7 @@ API do Hostly (`@hostly/api`), nascida do boilerplate SaaS do dono (`GabrielDev9
 - **Prisma 7** com adapter `@prisma/adapter-pg` (PostgreSQL)
 - **Auth**: Passport JWT (access 15m, refresh 7d), Argon2id, otplib (TOTP)
 - **Validação**: class-validator + class-transformer (controllers); Zod (env)
-- **Logging**: nestjs-pino (redact em headers `authorization` e `cookie`)
+- **Logging**: nestjs-pino (redact em headers `authorization` e `cookie`; o e-mail em modo log mascara o token e guarda o texto num arquivo, ver o `CLAUDE.md` da raiz)
 - **Outros**: helmet, throttler, swagger, BullMQ (e-mail e manutenção), cache no Redis
 - **Ambiente**: um `.env` só, na raiz do monorepo (`src/config/load-root-env.ts`); não existe `apps/api/.env`
 

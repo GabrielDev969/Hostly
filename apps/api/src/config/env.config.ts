@@ -218,6 +218,11 @@ export const envSchema = z
       message: 'METRICS_ALLOWED_IPS must be set (non-empty) when NODE_ENV=production',
     },
   )
+  // Log mode keeps the whole email, token links included, on the local disk: never in production.
+  .refine((data) => data.NODE_ENV !== 'production' || data.EMAIL_PROVIDER !== 'log', {
+    message:
+      'EMAIL_PROVIDER must be resend when NODE_ENV=production (log mode never sends the email)',
+  })
   .refine((data) => data.EMAIL_PROVIDER !== 'resend' || !!data.RESEND_API_KEY, {
     message: 'RESEND_API_KEY must be set when EMAIL_PROVIDER=resend',
   })
