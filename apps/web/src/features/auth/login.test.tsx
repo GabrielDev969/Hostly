@@ -7,6 +7,7 @@ import { ACCESS_TOKEN, panelHandlers } from '../../../test/handlers';
 import { navigation, setLocation } from '../../../test/navigation';
 import { renderWithSession } from '../../../test/render';
 import { API, server } from '../../../test/server';
+import { RESEND_VERIFICATION_SENT } from './resend-verification';
 
 const CHALLENGE = 'challenge-header.challenge-payload.challenge-signature';
 const TOTP = '123456';
@@ -239,5 +240,38 @@ describe('forgot password', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Confirme seu e-mail pelo link que enviamos antes de entrar.',
     );
+  });
+
+  it('resends the verification to the e-mail the login refused', async () => {
+    loginApi();
+    const asked: string[] = [];
+    server.use(
+      http.post(`${API}/api/v1/auth/login`, () =>
+        HttpResponse.json({ message: 'Email not verified' }, { status: 403 }),
+      ),
+      http.post(`${API}/api/v1/auth/verify-email/resend`, async ({ request }) => {
+        asked.push(((await request.json()) as { email: string }).email);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderWithSession(<LoginPage />);
+
+    const user = await signIn();
+    await user.click(await screen.findByRole('button', { name: 'Reenviar e-mail de verificação' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(RESEND_VERIFICATION_SENT);
+    expect(asked).toEqual(['ana@example.com']);
+  });
+
+  it('offers the resend only when the e-mail is unconfirmed', async () => {
+    loginApi();
+    renderWithSession(<LoginPage />);
+
+    await signIn('wrong-password');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('E-mail ou senha inválidos.');
+    expect(
+      screen.queryByRole('button', { name: 'Reenviar e-mail de verificação' }),
+    ).not.toBeInTheDocument();
   });
 });

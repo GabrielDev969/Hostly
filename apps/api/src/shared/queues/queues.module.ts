@@ -22,6 +22,7 @@ import { QUEUE } from './queue-names';
       },
     }),
     BullModule.registerQueue({ name: QUEUE.emails }),
+    BullModule.registerQueue({ name: QUEUE.emailVerification }),
     BullModule.registerQueue({ name: QUEUE.maintenance }),
   ],
   exports: [BullModule],

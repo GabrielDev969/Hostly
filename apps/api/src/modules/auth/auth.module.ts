@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import IORedis from 'ioredis';
+import { env } from 'src/config/env.config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { JwtKeyResolverModule } from './jwt-key-resolver.module';
@@ -17,6 +19,14 @@ import { EnableTwoFactorUseCase } from './use-cases/enable-2fa.use-case';
 import { DisableTwoFactorUseCase } from './use-cases/disable-2fa.use-case';
 import { VerifyTwoFactorUseCase } from './use-cases/verify-2fa.use-case';
 import { RequestEmailVerificationUseCase } from './use-cases/request-email-verification.use-case';
+import { ResendEmailVerificationUseCase } from './use-cases/resend-email-verification.use-case';
+import {
+  EMAIL_VERIFICATION_REDIS,
+  EmailVerificationRateLimiter,
+  EmailVerificationRedis,
+} from './services/email-verification-rate-limiter.service';
+import { EmailVerificationQueue } from './services/email-verification-queue.service';
+import { EmailVerificationProcessor } from './http/email-verification.processor';
 import { VerifyEmailUseCase } from './use-cases/verify-email.use-case';
 import { ForgotPasswordUseCase } from './use-cases/forgot-password.use-case';
 import { ResetPasswordUseCase } from './use-cases/reset-password.use-case';
@@ -54,6 +64,23 @@ import { AuditModule } from '@modules/audit/audit.module';
     DisableTwoFactorUseCase,
     VerifyTwoFactorUseCase,
     RequestEmailVerificationUseCase,
+    ResendEmailVerificationUseCase,
+    {
+      provide: EMAIL_VERIFICATION_REDIS,
+      // Real Redis in tests too, like the pairing limits: these must hold. Commands fail fast
+      // instead of queueing while Redis is down, so the resend fails closed.
+      useFactory: (): EmailVerificationRedis =>
+        new IORedis({
+          host: env.REDIS_HOST,
+          port: env.REDIS_PORT,
+          password: env.REDIS_PASSWORD,
+          maxRetriesPerRequest: 1,
+          enableOfflineQueue: false,
+        }),
+    },
+    EmailVerificationRateLimiter,
+    EmailVerificationQueue,
+    EmailVerificationProcessor,
     VerifyEmailUseCase,
     ForgotPasswordUseCase,
     ResetPasswordUseCase,

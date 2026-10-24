@@ -7,6 +7,7 @@ import {
   Res,
   HttpCode,
   HttpStatus,
+  Ip,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
@@ -19,6 +20,7 @@ import { EnableTwoFactorUseCase } from '../use-cases/enable-2fa.use-case';
 import { DisableTwoFactorUseCase } from '../use-cases/disable-2fa.use-case';
 import { VerifyTwoFactorUseCase } from '../use-cases/verify-2fa.use-case';
 import { RequestEmailVerificationUseCase } from '../use-cases/request-email-verification.use-case';
+import { ResendEmailVerificationUseCase } from '../use-cases/resend-email-verification.use-case';
 import { VerifyEmailUseCase } from '../use-cases/verify-email.use-case';
 import { ForgotPasswordUseCase } from '../use-cases/forgot-password.use-case';
 import { ResetPasswordUseCase } from '../use-cases/reset-password.use-case';
@@ -34,6 +36,7 @@ import { VerifyTwoFactorDto } from './dto/verify-2fa.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ResendEmailVerificationDto } from './dto/resend-email-verification.dto';
 import { Public } from '@shared/decorators/public.decorator';
 import { CurrentUser } from '@shared/decorators/current-user.decorator';
 import { RateLimit } from '@shared/decorators/rate-limits';
@@ -62,6 +65,7 @@ export class AuthController {
     private disable2fa: DisableTwoFactorUseCase,
     private verify2fa: VerifyTwoFactorUseCase,
     private requestEmailVerification: RequestEmailVerificationUseCase,
+    private resendEmailVerification: ResendEmailVerificationUseCase,
     private verifyEmail: VerifyEmailUseCase,
     private forgotPassword: ForgotPasswordUseCase,
     private resetPassword: ResetPasswordUseCase,
@@ -271,6 +275,32 @@ export class AuthController {
   @ApiServerError()
   async requestEmailVerificationEndpoint(@CurrentUser() user: AccessTokenPayload) {
     await this.requestEmailVerification.execute(user.id);
+  }
+
+  // Rate limited in Redis (EmailVerificationRateLimiter), which also holds in tests, not by @RateLimit.
+  @Public()
+  @Post('verify-email/resend')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Audit({ action: 'auth.email_verification.resend_requested' })
+  @ApiOperation({
+    summary:
+      'Resend the email verification link without a session; always returns 204 (no user enumeration)',
+  })
+  @ApiBody({ type: ResendEmailVerificationDto })
+  @ApiResponse({
+    status: 204,
+    description: 'Verification email queued (if the account exists and is not verified yet)',
+  })
+  @ApiValidationError()
+  @ApiRateLimitError()
+  @ApiResponse({
+    status: 503,
+    description: 'Rate limit store unavailable; nothing was queued',
+    type: ErrorResponseDto,
+  })
+  @ApiServerError()
+  async resendEmailVerificationEndpoint(@Body() dto: ResendEmailVerificationDto, @Ip() ip: string) {
+    await this.resendEmailVerification.execute({ email: dto.email, ip });
   }
 
   @Public()

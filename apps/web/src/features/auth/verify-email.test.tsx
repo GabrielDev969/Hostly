@@ -13,9 +13,32 @@ import {
 } from '../../../test/auth';
 import { panelHandlers } from '../../../test/handlers';
 import { renderWithSession } from '../../../test/render';
+import { RESEND_VERIFICATION_SENT } from './resend-verification';
 import { API, server } from '../../../test/server';
 
 const VERIFY = '/api/v1/auth/verify-email';
+const RESEND = '/api/v1/auth/verify-email/resend';
+
+// The API answers 204 for any e-mail; only it knows which ones have an account waiting.
+function resendApi(answers: number[] = []) {
+  const asked: string[] = [];
+  server.use(
+    http.post(`${API}${RESEND}`, async ({ request }) => {
+      asked.push(((await request.json()) as { email: string }).email);
+      const status = answers.shift() ?? 204;
+      return status === 204
+        ? new HttpResponse(null, { status })
+        : HttpResponse.json({ message: 'Refused' }, { status });
+    }),
+  );
+  return asked;
+}
+
+async function askResend(email: string) {
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText('E-mail'), email);
+  await user.click(screen.getByRole('button', { name: 'Reenviar e-mail de verificação' }));
+}
 
 function verifyApi(answers: (204 | 400 | 429)[] = [204]) {
   const { handlers } = panelHandlers('operator_admin', { refreshValid: false });
@@ -64,8 +87,54 @@ describe('verify e-mail', () => {
     open();
 
     expect(await screen.findByText('Link inválido ou expirado')).toBeInTheDocument();
-    expect(screen.getByText(/peça ajuda a quem administra o painel/)).toBeInTheDocument();
+    expect(screen.getByText(/peça um link novo/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Reenviar e-mail de verificação' }),
+    ).toBeInTheDocument();
   });
+
+  it('asks for a new link from an expired one, with the same answer for any e-mail', async () => {
+    verifyApi([400, 400]);
+    const asked = resendApi();
+    const screens: string[] = [];
+    for (const email of ['ana@example.com', 'ninguem@example.com']) {
+      const { container, unmount } = open();
+      expect(await screen.findByText('Link inválido ou expirado')).toBeInTheDocument();
+      await askResend(email);
+      expect(await screen.findByRole('status')).toHaveTextContent(RESEND_VERIFICATION_SENT);
+      expect(
+        screen.queryByRole('button', { name: 'Reenviar e-mail de verificação' }),
+      ).not.toBeInTheDocument();
+      screens.push(container.innerHTML);
+      unmount();
+    }
+
+    expect(asked).toEqual(['ana@example.com', 'ninguem@example.com']);
+    expect(screens[0]).toBe(screens[1]);
+  });
+
+  it.each([
+    [400, 'Confira o e-mail.'],
+    [429, 'Muitas tentativas. Aguarde um pouco e tente de novo.'],
+    [503, 'Não foi possível enviar agora. Tente de novo.'],
+  ] as const)(
+    'explains a %i on the resend and lets the user try again',
+    async (status, message) => {
+      verifyApi([400]);
+      const asked = resendApi([status]);
+      open();
+      expect(await screen.findByText('Link inválido ou expirado')).toBeInTheDocument();
+
+      await askResend('ana@example.com');
+      expect(await screen.findByText(message)).toHaveAttribute('role', 'alert');
+
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'Reenviar e-mail de verificação' }));
+      expect(await screen.findByRole('status')).toHaveTextContent(RESEND_VERIFICATION_SENT);
+      expect(asked).toEqual(['ana@example.com', 'ana@example.com']);
+    },
+  );
 
   it('retries with the token it kept after too many attempts', async () => {
     const { tokens } = verifyApi([429, 204]);
@@ -85,5 +154,18 @@ describe('verify e-mail', () => {
 
     expect(await screen.findByText('Link inválido')).toBeInTheDocument();
     await waitFor(() => expect(tokens).toEqual([]));
+  });
+
+  it('asks for a new link from a broken one', async () => {
+    verifyApi();
+    const asked = resendApi();
+    window.history.replaceState(null, '', '/auth/verify-email');
+    renderWithSession(<VerifyEmailPage />);
+
+    expect(await screen.findByText('Link inválido')).toBeInTheDocument();
+    await askResend('ana@example.com');
+
+    expect(await screen.findByRole('status')).toHaveTextContent(RESEND_VERIFICATION_SENT);
+    expect(asked).toEqual(['ana@example.com']);
   });
 });

@@ -8,6 +8,7 @@ import { unwrapEmpty } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { useSession } from '@/lib/session/session-provider';
 import { TOO_MANY_ATTEMPTS } from './form-error';
+import { ResendVerification } from './resend-verification';
 import styles from './login.module.css';
 import { useUrlToken } from './url-token';
 
@@ -53,8 +54,10 @@ export function VerifyEmail() {
         <div className={styles.panel}>
           <h1 className={styles.title}>Link inválido</h1>
           <p className={styles.subtitle}>
-            Este link de confirmação está incompleto. Abra de novo o link do e-mail.
+            Este link de confirmação está incompleto. Abra de novo o link do e-mail ou peça um link
+            novo.
           </p>
+          <ResendVerification />
           <LoginLink />
         </div>
       );
@@ -79,8 +82,9 @@ export function VerifyEmail() {
           <h1 className={styles.title}>Link inválido ou expirado</h1>
           <p className={styles.subtitle} role="alert">
             Este link já foi usado ou venceu (ele vale 24 horas). Se você já confirmou o e-mail, é
-            só entrar. Se não, peça ajuda a quem administra o painel.
+            só entrar. Se não, peça um link novo.
           </p>
+          <ResendVerification />
           <LoginLink />
         </div>
       );

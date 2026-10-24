@@ -1,5 +1,6 @@
 export const QUEUE = {
   emails: 'emails',
+  emailVerification: 'email-verification',
   maintenance: 'maintenance',
 } as const;
 
