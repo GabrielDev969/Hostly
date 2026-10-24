@@ -5,7 +5,7 @@ packages:
 
 # Uma versão só pra quem precisa da mesma em todo o workspace.
 catalog:
-  zod: 4.4.3
+  zod: 4.6.7
 
 # pnpm 12 recusa o install se uma dependência tiver script de build não revisado.
 # false = só aviso, telemetria ou binário nativo opcional com fallback em JS.
@@ -27,3 +27,19 @@ peerDependencyRules:
   allowedVersions:
     openapi-typescript>typescript: '6'
     eslint-plugin-jsx-a11y>eslint: '10'
+
+# Versões corrigidas de dependências indiretas (#114), por faixa vulnerável pra pegar qualquer caminho.
+overrides:
+  # GHSA-96hv-2xvq-fx4p e GHSA-58qx-3vcg-4xpx. O @nestjs/platform-ws 11.1.19 fixa ws 8.20.0; sai na #115 (Nest 11.2).
+  'ws@>=8.0.0 <8.21.0': 8.21.3
+  # GHSA-q7qp-rjg7-q26m e outros 6. Nenhum @nestjs/platform-express 11 traz 2.5.0; a #115 revê.
+  'multer@>=2.0.0 <2.5.0': 2.5.0
+  # GHSA-2883-xcg3-v3hh, GHSA-5p4m-2wfm-xmqj, GHSA-52cp-r559-cp3m e GHSA-h67p-54hq-rp68, via @nestjs/swagger 11.4.2.
+  # Nenhum swagger 11 traz js-yaml corrigido (o 5.x é vulnerável até 5.4.0); a #115 revê.
+  'js-yaml@>=4.0.0 <4.3.2': 4.3.2
+
+# Avisos altos fora do caminho das requisições: só rodam no CLI do prisma. Saem com a subida do Prisma (#116).
+auditConfig:
+  ignoreGhsas:
+    - GHSA-ggr8-5vv4-36mx # deepmerge-ts 7.1.5, via @prisma/config
+    - GHSA-3f6p-5ww8-9rcr # mysql2 3.15.3, via prisma; o Postgres não usa
