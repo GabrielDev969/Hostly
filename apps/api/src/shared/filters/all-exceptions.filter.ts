@@ -23,6 +23,8 @@ const STATUS_TEXT: Record<number, string> = {
   403: 'Forbidden',
   404: 'Not Found',
   409: 'Conflict',
+  413: 'Payload Too Large',
+  415: 'Unsupported Media Type',
   422: 'Unprocessable Entity',
   429: 'Too Many Requests',
   500: 'Internal Server Error',
@@ -30,6 +32,13 @@ const STATUS_TEXT: Record<number, string> = {
 };
 
 const statusText = (status: number): string => STATUS_TEXT[status] ?? 'Error';
+
+// A client error from http-errors, which express middleware passes on: a 4xx status marked safe to expose.
+function isClientHttpError(err: unknown): err is Error & { status: number } {
+  if (!(err instanceof Error)) return false;
+  const { status, expose } = err as Error & { status?: unknown; expose?: unknown };
+  return typeof status === 'number' && status >= 400 && status < 500 && expose === true;
+}
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -73,6 +82,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
     if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       return this.fromPrismaKnown(exception);
+    }
+    if (isClientHttpError(exception)) {
+      // Express middleware errors (http-errors) keep their 4xx status; their message can quote the request.
+      return {
+        statusCode: exception.status,
+        error: statusText(exception.status),
+        message: statusText(exception.status),
+      };
     }
     if (exception instanceof Prisma.PrismaClientValidationError) {
       return {

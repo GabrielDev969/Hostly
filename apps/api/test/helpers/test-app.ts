@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { WsAdapter } from '@nestjs/platform-ws';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Writable } from 'stream';
 import { Logger, PARAMS_PROVIDER_TOKEN, type Params } from 'nestjs-pino';
 import type { Options } from 'pino-http';
@@ -11,6 +12,7 @@ import { EmailDispatcher } from '../../src/shared/mailer/email-dispatcher.servic
 import { TestEmailDispatcher } from './test-email-dispatcher';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { createRedisCache } from './redis-cache';
+import { configureBodyParsers } from '../../src/config/body-parser.config';
 
 export interface TestAppHandle {
   app: INestApplication;
@@ -49,11 +51,14 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   }
   const moduleRef = await builder.compile();
 
-  const app = moduleRef.createNestApplication(options.logs ? { bufferLogs: true } : {});
+  const app = moduleRef.createNestApplication<NestExpressApplication>(
+    options.logs ? { bufferLogs: true } : {},
+  );
   if (options.logs) app.useLogger(app.get(Logger));
 
   app.useWebSocketAdapter(new WsAdapter(app));
   app.use(cookieParser());
+  configureBodyParsers(app);
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
