@@ -67,6 +67,8 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
-  await app.init();
+  // One server per app, bound where supertest and the sockets connect. Left unbound, supertest opens a listen(0) on ::
+  // per request, and macOS can hand it a port another process holds on 127.0.0.1 only: "socket hang up" (#103).
+  await app.listen(0, '127.0.0.1');
   return { app, emailDispatcher };
 }

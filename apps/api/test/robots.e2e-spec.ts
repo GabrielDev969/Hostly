@@ -164,9 +164,6 @@ describe('Robots and pairing (e2e)', () => {
     await startTestDatabase();
     const { createTestApp } = require('./helpers/test-app') as typeof import('./helpers/test-app');
     ({ app, emailDispatcher } = await createTestApp());
-    // One listening server: supertest otherwise opens a server per request, and bursts of
-    // simultaneous requests (the race tests) reset connections.
-    await app.listen(0);
     server = app.getHttpServer() as App;
     auth = app.get(RobotAuthService);
 

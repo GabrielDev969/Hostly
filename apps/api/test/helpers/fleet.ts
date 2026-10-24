@@ -115,7 +115,6 @@ export async function setupFleet(logs?: Writable): Promise<Fleet> {
   await startTestDatabase();
   const { createTestApp } = require('./test-app') as typeof import('./test-app');
   const { app, emailDispatcher } = await createTestApp({ logs });
-  await app.listen(0);
   const server = app.getHttpServer() as App;
   const { port } = (app.getHttpServer() as { address(): AddressInfo }).address();
 

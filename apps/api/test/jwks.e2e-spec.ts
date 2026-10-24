@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import type { Server } from 'net';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { startTestDatabase, stopTestDatabase } from './helpers/test-database';
@@ -19,6 +20,11 @@ describe('JWKS (e2e)', () => {
   afterAll(async () => {
     await app.close();
     await stopTestDatabase();
+  });
+
+  // Guards #103: an unbound app makes supertest listen on :: per request, which collides on macOS.
+  it('createTestApp leaves the server listening on 127.0.0.1', () => {
+    expect((server as unknown as Server).address()).toMatchObject({ address: '127.0.0.1' });
   });
 
   it('GET /.well-known/jwks.json is publicly reachable and returns every configured kid', async () => {

@@ -181,8 +181,10 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
 - **Uma instância na v1:** o registro de conexões do robô (`RobotConnectionRegistry`) e o barramento de eventos do
   painel (`LiveEventBus`) ficam em memória, atrás de abstract classes. Com mais de uma instância, os dois passam pro
   Redis (registro compartilhado pra "a conexão nova derruba a antiga" e pub/sub pros eventos).
-- O e2e dos sockets precisa de `app.listen(0)` e do `WsAdapter` (já no `createTestApp`); o `test/env.ts` usa ping de
-  1 s, 3 faltas e hello em 2 s. Espere sempre com prazo (`waitFor` de `test/helpers/fleet.ts`), nunca com `sleep`.
+- O `createTestApp` já devolve o app escutando em `127.0.0.1` numa porta efêmera, com o `WsAdapter`; não chame
+  `app.listen` de novo. Sem isso, o supertest abre um `listen(0)` em `::` por requisição, e no macOS essa porta pode
+  ser de outro processo em `127.0.0.1` (`socket hang up`, #103). O `test/env.ts` usa ping de 1 s, 3 faltas e hello em
+  2 s. Espere sempre com prazo (`waitFor` de `test/helpers/fleet.ts`), nunca com `sleep`.
   `createTestApp({ logs })` manda o log do pino de verdade (nível `trace`) pra um stream, pra provar que segredo não
   vai pro log.
 - **Tabela de negócio nova** entra em `SCOPED_MODELS` (`src/shared/tenancy/scoped-models.ts`). O
