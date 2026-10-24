@@ -183,7 +183,7 @@ decisões em aberto".
 
 ## Como trabalhar uma issue
 
-Leia a issue inteira (`gh api repos/GabrielDev969/hostly/issues/N`) e as seções da spec que ela cita.
+Leia a issue inteira (`gh api repos/GabrielDev969/Hostly/issues/N`) e as seções da spec que ela cita.
 
 **Issue de código** — etapas, sempre nesta ordem:
 
