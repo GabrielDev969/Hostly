@@ -129,7 +129,12 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   - A `Permission` global (`workspaceId` nulo) aparece na leitura, mas escrita nenhuma a alcança; só o seed e
     `runAsSystem` a gravam.
   - O `delete` de papel fica no client cru, com `where: { id, workspaceId }`, porque `Role.members` chega no
-    `WorkspaceMember`.
+    `WorkspaceMember`. Ele apaga os convites do papel antes do papel, na mesma transação (ordem dos locks abaixo).
+  - O `roleId` de `WorkspaceMember` e de `Invitation` é FK composta `(roleId, workspaceId)` pro `Role(id,
+    workspaceId)`, com `onUpdate: Restrict`: nenhum client, nem o cru, nem o `runAsSystem`, grava papel de outro
+    workspace. A escrita que bate nela dá `P2003` → 409, igual pra papel de outro workspace e papel inexistente. O
+    `tenant-scope.registry.spec.ts` falha se uma relação de modelo com `workspaceId` pra modelo de
+    `WORKSPACE_KEYED_MODELS` não levar `workspaceId` na chave.
   - O aceite de convite (sem membership) e as rotas de flag do super admin (sem escopo) rodam em `runAsSystem`.
 - A recusa de escrita aninhada vale em todo nível (`create`, `createMany`, `connectOrCreate`, `update`, `upsert` e
   `updateMany` aninhados) quando o modelo ou o alvo está em `SCOPED_MODELS` ou `WORKSPACE_KEYED_MODELS`.
@@ -147,6 +152,10 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   primeiro, na transação do insert, com `updateMany({ where: { id, deletedAt: null }, data: { updatedAt: now } })`; se
   `count` for 0, responde 404 e não cria nada. Fazem isso: criar local, mandar e aceitar convite, mover e aprovar robô.
   Ordem única pra todo caminho: `Client → Site → Robot → RobotPairing` (e `Client → Invitation → WorkspaceMember`).
+  Convite e papel: `Invitation → Role`. O aceite trava o convite e depois o papel (a FK do membro novo), e o
+  delete-role apaga os convites antes do papel. Por isso a FK do convite é `NO ACTION`, não `CASCADE`: a cascata
+  travaria o papel antes do convite. Na corrida, o DELETE do papel responde 409 e o aceite que perde responde 400
+  ("no longer pending").
   Nenhuma transação trava uma linha mais acima depois de uma mais abaixo, senão o Postgres aborta uma delas (40P01,
   que vira 500). O comentário de `prisma-robot-pairings.repository.ts` lista cada caminho, e os e2e "racing a ..."
   provam cada corrida com uma transação parada (`test/helpers/held-transaction.ts`).
@@ -301,6 +310,8 @@ Há um filter global (`AllExceptionsFilter`) que normaliza **todas** as resposta
 - Não escreva tratamento manual em controllers (sem try/catch só pra responder erro). Lance exceções HTTP do Nest e o filter normaliza.
 - `class-validator` errors viram `details: string[]` com `message: "Validation failed"`.
 - `Prisma.PrismaClientKnownRequestError` é mapeado: `P2002 → 409`, `P2025 → 404`, `P2003 → 409`, `P2014 → 400`. Outros caem em 500.
+- FK com `ON DELETE RESTRICT` recusa com `23001`, que o `@prisma/adapter-pg` não traduz pra `P2003` (só o `23503` do
+  `NO ACTION`): o filter reconhece o `DriverAdapterError` com `originalCode` `23001` e responde o mesmo 409 do `P2003`.
 - 5xx são logados via `Logger`. 4xx não.
 - `stack` só aparece fora de produção.
 

@@ -192,6 +192,44 @@ describe('AllExceptionsFilter', () => {
     expect(status).toHaveBeenCalledWith(500);
   });
 
+  // What @prisma/adapter-pg throws for a raw Postgres error it does not translate.
+  const driverAdapterError = (code: string, message: string): Error =>
+    Object.assign(new Error(message), {
+      name: 'DriverAdapterError',
+      cause: { originalCode: code, originalMessage: message, kind: 'postgres', code, message },
+    });
+
+  it('maps an ON DELETE RESTRICT refusal (23001) like P2003, without logging it', () => {
+    const logError = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { host, status, json } = buildHost();
+
+    filter.catch(
+      driverAdapterError(
+        '23001',
+        'update or delete on table "Role" violates RESTRICT setting of foreign key constraint',
+      ),
+      host,
+    );
+
+    expect(status).toHaveBeenCalledWith(409);
+    expect(json.mock.calls[0][0]).toMatchObject({
+      statusCode: 409,
+      error: 'Conflict',
+      message: 'Foreign key constraint violated',
+    });
+    expect(logError).not.toHaveBeenCalled();
+  });
+
+  it('keeps other raw database errors a logged 500', () => {
+    const logError = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { host, status } = buildHost();
+
+    filter.catch(driverAdapterError('40P01', 'deadlock detected'), host);
+
+    expect(status).toHaveBeenCalledWith(500);
+    expect(logError).toHaveBeenCalled();
+  });
+
   it('maps unknown Prisma error codes to a generic 500 database error', () => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const { host, status, json } = buildHost();

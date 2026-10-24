@@ -34,7 +34,9 @@ type ScopedMock = {
 
 type RawMock = {
   role: { delete: jest.Mock };
+  invitation: { deleteMany: jest.Mock };
   workspaceMember: WorkspaceMemberClient;
+  $transaction: jest.Mock;
 };
 
 const baseRoleRow = {
@@ -92,7 +94,12 @@ describe('PrismaRolesRepository', () => {
       },
       $transaction: jest.fn(async (fn: (txArg: Tx) => Promise<unknown>) => fn(tx)),
     };
-    raw = { role: { delete: jest.fn() }, workspaceMember: { count: jest.fn() } };
+    raw = {
+      role: { delete: jest.fn() },
+      invitation: { deleteMany: jest.fn() },
+      workspaceMember: { count: jest.fn() },
+      $transaction: jest.fn(),
+    };
     repo = new PrismaRolesRepository(
       raw as unknown as PrismaService,
       { client: prisma } as unknown as ScopedPrismaService,
@@ -311,10 +318,15 @@ describe('PrismaRolesRepository', () => {
   });
 
   describe('delete', () => {
-    it('removes the role by id, pinned to its workspace', async () => {
-      raw.role.delete.mockResolvedValue(baseRoleRow);
+    it('removes its invitations, then the role, pinned to its workspace, in one transaction', async () => {
+      raw.invitation.deleteMany.mockReturnValue('delete invitations');
+      raw.role.delete.mockReturnValue('delete role');
       await repo.delete('r1', 'w1');
+      expect(raw.invitation.deleteMany).toHaveBeenCalledWith({
+        where: { roleId: 'r1', workspaceId: 'w1' },
+      });
       expect(raw.role.delete).toHaveBeenCalledWith({ where: { id: 'r1', workspaceId: 'w1' } });
+      expect(raw.$transaction).toHaveBeenCalledWith(['delete invitations', 'delete role']);
     });
   });
 
