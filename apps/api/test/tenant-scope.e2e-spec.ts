@@ -394,6 +394,64 @@ describe('Tenant scope (e2e)', () => {
     });
   });
 
+  describe('writes to roles, permissions and feature flags', () => {
+    it('are refused to client users and advertisers on every route, and change nothing', async () => {
+      const prisma = getPrisma();
+      const role = await prisma.role.create({
+        data: { name: 'route-target', workspaceId: workspaceX },
+      });
+      const custom = await prisma.permission.create({
+        data: { key: 'custom:route', category: 'custom', workspaceId: workspaceX },
+      });
+      const snapshot = async () => ({
+        roles: await prisma.role.findMany({ orderBy: { id: 'asc' } }),
+        links: await prisma.rolePermission.count(),
+        permissions: await prisma.permission.findMany({ orderBy: { id: 'asc' } }),
+        flags: await prisma.workspaceFeatureFlag.findMany(),
+      });
+      const before = await snapshot();
+
+      for (const user of ['clientAdminA', 'clientEditorA', 'advertiserA1'] as const) {
+        const auth = { Authorization: `Bearer ${tokens[user]}`, 'x-workspace-id': workspaceX };
+        await request(server)
+          .post('/api/v1/rbac/roles')
+          .set(auth)
+          .send({ name: 'sneaky', permissionKeys: ['workspace:read'] })
+          .expect(403);
+        await request(server)
+          .patch(`/api/v1/rbac/roles/${role.id}`)
+          .set(auth)
+          .send({ name: 'renamed' })
+          .expect(403);
+        await request(server)
+          .post(`/api/v1/rbac/roles/${role.id}/permissions`)
+          .set(auth)
+          .send({ permissionKey: 'workspace:read' })
+          .expect(403);
+        await request(server).delete(`/api/v1/rbac/roles/${role.id}`).set(auth).expect(403);
+        await request(server)
+          .post('/api/v1/rbac/permissions')
+          .set(auth)
+          .send({ key: 'custom:sneaky', category: 'custom' })
+          .expect(403);
+        await request(server).delete(`/api/v1/rbac/permissions/${custom.id}`).set(auth).expect(403);
+        await request(server)
+          .put(`/api/v1/admin/workspaces/${workspaceX}/features/billing`)
+          .set(auth)
+          .send({ enabled: true })
+          .expect(403);
+        await request(server)
+          .delete(`/api/v1/admin/workspaces/${workspaceX}/features/billing`)
+          .set(auth)
+          .expect(403);
+      }
+
+      expect(await snapshot()).toEqual(before);
+      await prisma.role.delete({ where: { id: role.id } });
+      await prisma.permission.delete({ where: { id: custom.id } });
+    });
+  });
+
   describe('relations loaded from unscoped models', () => {
     const asClientA = <T>(fn: () => Promise<T>) =>
       TenantContext.runWithScope(scopeOf({ clientId: CLIENT_A }), fn);
@@ -656,6 +714,24 @@ describe('Tenant scope (e2e)', () => {
         await getPrisma().workspaceFeatureFlag.findUniqueOrThrow({ where: { id: flagX.id } }),
       ).toEqual(flagX);
       await getPrisma().workspaceFeatureFlag.delete({ where: { id: flagX.id } });
+    });
+
+    it("does not let a relation filter tell what another workspace's roles hold", async () => {
+      // Every global permission is linked to the roles of workspace Y.
+      const linkedToY = await getPrisma().permission.count({
+        where: { workspaceId: null, roles: { some: { role: { workspaceId: workspaceY } } } },
+      });
+      expect(linkedToY).toBeGreaterThan(0);
+
+      const probe = await asOperatorX(async () => ({
+        permissions: await scoped.client.permission.findMany({
+          where: { roles: { some: { role: { workspaceId: workspaceY } } } },
+        }),
+        links: await scoped.client.rolePermission.count({
+          where: { role: { workspaceId: workspaceY } },
+        }),
+      }));
+      expect(probe).toEqual({ permissions: [], links: 0 });
     });
 
     it('refuses a query naming another workspace, and caches nothing', async () => {

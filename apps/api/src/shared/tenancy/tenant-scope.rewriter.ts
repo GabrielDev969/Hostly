@@ -260,13 +260,19 @@ export class TenantScopeRewriter {
     return out;
   }
 
+  // Workspace-keyed targets are pinned too, or a filter through them (say, global permission →
+  // RolePermission → role of another workspace) would tell what another tenant holds.
   private relationFilter(relation: Relation, filter: Args): Args {
     const scoped = SCOPED_MODELS[relation.target];
+    const keyed = WORKSPACE_KEYED_MODELS[relation.target];
+    const pinned = Boolean(scoped ?? keyed);
+    const pin = (): Where =>
+      scoped
+        ? this.scopeWhere(relation.target, scoped)
+        : this.workspaceWhere(relation.target, Boolean(keyed?.globalRows));
     const inScope = (inner: unknown): unknown => {
       const rewritten = this.where(relation.target, inner);
-      return scoped && inner !== null
-        ? and(rewritten, this.scopeWhere(relation.target, scoped))
-        : rewritten;
+      return pinned && inner !== null ? and(rewritten, pin()) : rewritten;
     };
 
     if (relation.isList) {
@@ -274,13 +280,8 @@ export class TenantScopeRewriter {
       for (const [op, inner] of Object.entries(filter)) {
         // `every` must ignore rows outside the scope instead of failing because of them.
         out[op] =
-          op === 'every' && scoped
-            ? {
-                OR: [
-                  this.where(relation.target, inner),
-                  { NOT: this.scopeWhere(relation.target, scoped) },
-                ],
-              }
+          op === 'every' && pinned
+            ? { OR: [this.where(relation.target, inner), { NOT: pin() }] }
             : inScope(inner);
       }
       return out;

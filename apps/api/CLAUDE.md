@@ -116,7 +116,8 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
 - **Modelos com `workspaceId` sem dimensão de cliente** (`Role`, `Permission`, `WorkspaceFeatureFlag`) ficam em
   `WORKSPACE_KEYED_MODELS`, não em `SCOPED_MODELS`: relações a-um chegam neles (`WorkspaceMember.role`,
   `RolePermission.permission`) e cliente e anunciante leem flags e o papel dos membros. No client com escopo:
-  - o `where` deles sempre ganha `workspaceId` do escopo;
+  - o `where` deles sempre ganha `workspaceId` do escopo, e o filtro de relação que chega neles também (senão um
+    filtro por permissão global → `RolePermission` → papel de outro workspace revelaria o que o outro tenant tem);
   - `where` que cita outro workspace, direto ou em chave composta (`workspaceId_name`, `workspaceId_key`), dá
     `TenantScopeError`, em vez de voltar vazio e o `@Cacheable` guardar o vazio;
   - o create sem `workspaceId` ganha o do escopo;

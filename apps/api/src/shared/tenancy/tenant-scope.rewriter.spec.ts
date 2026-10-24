@@ -618,5 +618,81 @@ describe('TenantScopeRewriter', () => {
         TenantScopeError,
       );
     });
+
+    it('keeps the workspace pin whatever AND, OR, NOT, in or not the caller writes', () => {
+      const rewriter = new TenantScopeRewriter(operator);
+      const pin = { workspaceId: 'w1' };
+      for (const where of [
+        { OR: [{ id: 'r1' }, { name: 'x' }] },
+        { NOT: { workspaceId: 'w1' } },
+        { AND: [{ id: { in: ['r1', 'r2'] } }, { name: { not: 'x' } }] },
+      ]) {
+        expect(rewriter.rewrite('Role', 'findMany', { where }).where).toEqual({
+          ...where,
+          AND: [...(Array.isArray(where.AND) ? where.AND : []), pin],
+        });
+      }
+    });
+
+    it('pins relation filters that reach them, so no filter probes another workspace', () => {
+      const rewriter = new TenantScopeRewriter(operator);
+      const globalOrOwn = { OR: [{ workspaceId: null }, { workspaceId: 'w1' }] };
+      // Global permissions are readable; the roles they link to must not reveal another workspace.
+      expect(
+        rewriter.rewrite('Permission', 'findMany', {
+          where: { roles: { some: { role: { workspaceId: 'w2' } } } },
+        }).where,
+      ).toEqual({
+        roles: { some: { role: { workspaceId: 'w2', AND: [{ workspaceId: 'w1' }] } } },
+        AND: [globalOrOwn],
+      });
+      expect(
+        rewriter.rewrite('RolePermission', 'count', {
+          where: { role: { is: { name: 'x' } }, permission: { key: 'k' } },
+        }).where,
+      ).toEqual({
+        role: { is: { name: 'x', AND: [{ workspaceId: 'w1' }] } },
+        permission: { key: 'k', AND: [globalOrOwn] },
+      });
+      expect(
+        rewriter.rewrite('Workspace', 'findMany', {
+          where: { roles: { every: { isSystem: true } }, featureFlags: { none: { key: 'k' } } },
+        }).where,
+      ).toEqual({
+        roles: { every: { OR: [{ isSystem: true }, { NOT: { workspaceId: 'w1' } }] } },
+        featureFlags: { none: { key: 'k', AND: [{ workspaceId: 'w1' }] } },
+        AND: [{ organizationId: 'org1' }],
+      });
+    });
+
+    it.each([
+      ['connect', { connect: { id: 'm1' } }],
+      ['connect, list', { connect: [{ id: 'm1' }, { id: 'm2' }] }],
+      ['set', { set: [{ id: 'm1' }] }],
+      ['disconnect', { disconnect: [{ id: 'm1' }] }],
+      ['delete', { delete: [{ id: 'm1' }] }],
+      ['deleteMany', { deleteMany: {} }],
+      ['create, list', { create: [{ workspaceId: 'w1' }] }],
+      ['createMany', { createMany: { data: [{ workspaceId: 'w1' }] } }],
+      ['connectOrCreate, list', { connectOrCreate: [{ where: { id: 'm1' }, create: {} }] }],
+      ['update, list', { update: [{ where: { id: 'm1' }, data: { clientId: null } }] }],
+      ['updateMany, list', { updateMany: [{ where: {}, data: { clientId: null } }] }],
+      ['upsert, list', { upsert: [{ where: { id: 'm1' }, create: {}, update: {} }] }],
+    ])('rejects %s into a scoped list a level down', (_, write) => {
+      expect(() =>
+        new TenantScopeRewriter(operator).rewrite('EmailVerifyToken', 'update', {
+          where: { id: 't1' },
+          data: { user: { update: { where: {}, data: { memberships: write } } } },
+        }),
+      ).toThrow(TenantScopeError);
+      expect(() =>
+        new TenantScopeRewriter(operator).rewrite('Session', 'create', {
+          data: {
+            refreshTokenHash: 'h',
+            user: { connectOrCreate: { where: { id: 'u1' }, create: { memberships: write } } },
+          },
+        }),
+      ).toThrow(TenantScopeError);
+    });
   });
 });
