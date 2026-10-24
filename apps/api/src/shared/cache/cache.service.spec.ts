@@ -85,10 +85,48 @@ describe('CacheService', () => {
     expect(await svc.getNamespaceVersion('users')).toBe(3);
   });
 
-  it('buildKey embeds the current namespace version', async () => {
-    expect(await svc.buildKey('users', 'id:123')).toBe('users:v1:id:123');
+  it('buildKey embeds the value format and the current namespace version', async () => {
+    expect(await svc.buildKey('users', 'id:123')).toBe('users:c2:v1:id:123');
     await svc.bumpNamespace('users');
-    expect(await svc.buildKey('users', 'id:123')).toBe('users:v2:id:123');
+    expect(await svc.buildKey('users', 'id:123')).toBe('users:c2:v2:id:123');
+  });
+
+  describe('stored values', () => {
+    let cache: ReturnType<typeof createCache>;
+    let store: CacheService;
+
+    beforeEach(() => {
+      cache = createCache();
+      store = new CacheService(cache);
+    });
+
+    it('a hit gives back Dates, in a fresh object', async () => {
+      const value = { id: 'u1', tokensInvalidatedAt: new Date('2026-10-23T00:00:00.123Z') };
+      const fn = jest.fn(() => Promise.resolve(value));
+      await store.wrap('k', fn, 60_000);
+      const hit = await store.wrap('k', fn, 60_000);
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(hit).toStrictEqual(value);
+      expect(hit).not.toBe(value);
+      expect(hit.tokensInvalidatedAt).toBeInstanceOf(Date);
+    });
+
+    it('keeps the serialized text in the store, as Redis does', async () => {
+      await store.set('k', { at: new Date(5) });
+      expect(await cache.get('k')).toBe('{"at":{"$date":5}}');
+    });
+
+    it.each([
+      ['a raw object from the old format', { id: 'u1' }],
+      ['ISO text from the old format', '2026-10-23T00:00:00.000Z'],
+      ['a tag it never writes', '{"$date":"x"}'],
+    ])('treats %s as a miss', async (_label, raw) => {
+      await cache.set('k', raw);
+      expect(await store.get('k')).toBeNull();
+      const fn = jest.fn().mockResolvedValue('fresh');
+      expect(await store.wrap('k', fn, 60_000)).toBe('fresh');
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('with Redis namespace-version store', () => {

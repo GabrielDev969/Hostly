@@ -7,6 +7,9 @@ export const CACHE_NS = {
   featureFlags: 'feature_flags',
 } as const;
 
+// Part of every cached key: bumping it leaves the values of an older format unread until their TTL runs out.
+export const CACHE_VALUE_FORMAT = 'c2';
+
 const seconds = (n: number) => n * 1_000;
 const minutes = (n: number) => n * 60_000;
 const hours = (n: number) => n * 60 * 60_000;

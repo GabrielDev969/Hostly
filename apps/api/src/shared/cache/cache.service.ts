@@ -1,5 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
+import { CACHE_VALUE_FORMAT } from './cache.constants';
+import { deserializeCacheValue, serializeCacheValue } from './cache-serialization';
 
 export const CACHE_NSVER_REDIS = 'CACHE_NSVER_REDIS';
 
@@ -23,12 +25,20 @@ export class CacheService {
     private readonly nsverRedis: NamespaceVersionStore | null = null,
   ) {}
 
+  // Every store, the in-memory one of the tests included, holds the serialized text, so a hit reads what Redis gives.
+  // Whatever does not decode is a miss: the caller goes to the database instead of getting a corrupt value.
   async get<T>(key: string): Promise<T | null> {
-    return (await this.cache.get<T>(key)) ?? null;
+    const raw = await this.cache.get<unknown>(key);
+    if (typeof raw !== 'string') return null;
+    try {
+      return (deserializeCacheValue(raw) as T | undefined) ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async set<T>(key: string, value: T, ttlMs?: number): Promise<void> {
-    await this.cache.set(key, value, ttlMs);
+    await this.cache.set(key, serializeCacheValue(value), ttlMs);
   }
 
   async del(key: string): Promise<void> {
@@ -36,10 +46,10 @@ export class CacheService {
   }
 
   async wrap<T>(key: string, fn: () => Promise<T>, ttlMs: number): Promise<T> {
-    const cached = await this.cache.get<T>(key);
-    if (cached !== null && cached !== undefined) return cached;
+    const cached = await this.get<T>(key);
+    if (cached !== null) return cached;
     const value = await fn();
-    await this.cache.set(key, value, ttlMs);
+    await this.set(key, value, ttlMs);
     return value;
   }
 
@@ -65,7 +75,7 @@ export class CacheService {
 
   async buildKey(namespace: string, suffix: string): Promise<string> {
     const version = await this.getNamespaceVersion(namespace);
-    return `${namespace}:v${version}:${suffix}`;
+    return `${namespace}:${CACHE_VALUE_FORMAT}:v${version}:${suffix}`;
   }
 
   private versionKey(namespace: string): string {

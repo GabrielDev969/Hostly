@@ -133,6 +133,17 @@ describe('JwtStrategy', () => {
     });
   });
 
+  it.each([
+    ['ISO text', new Date(nowMs - 5_000).toISOString()],
+    ['an invalid Date', new Date(NaN)],
+  ])('fails closed with 401 when tokensInvalidatedAt comes back as %s', async (_label, value) => {
+    sessions.findById.mockResolvedValue(baseSession());
+    users.findTokensInvalidatedAt.mockResolvedValue(value as unknown as Date);
+    await expect(strategy.validate({ sub: 'u1', sessionId: 's1', iatMs: nowMs })).rejects.toThrow(
+      new UnauthorizedException('Token has been invalidated'),
+    );
+  });
+
   it('rejects an access token without the millisecond issue time', async () => {
     await expect(strategy.validate({ sub: 'u1', sessionId: 's1' })).rejects.toThrow(
       new UnauthorizedException('Invalid access token'),
