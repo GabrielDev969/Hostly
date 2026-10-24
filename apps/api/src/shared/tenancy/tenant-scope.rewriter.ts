@@ -241,7 +241,18 @@ export class TenantScopeRewriter {
     return RELATIONS.get(model) ?? new Map<string, Relation>();
   }
 
+  // A to-one filter into a pinned model also leaves a guard at the top of this model's where,
+  // outside any NOT: a row whose related row lies outside the scope then matches nothing, so no
+  // negation (NOT, isNot) can turn "outside the scope" into a match. List filters need no guard:
+  // they only ever look at the related rows inside the scope, whichever way they are negated.
   private where(model: string, where: unknown): unknown {
+    if (!isObject(where)) return where;
+    const guards = new Map<string, Where>();
+    const out = this.whereLevel(model, where, guards);
+    return [...guards.values()].reduce<unknown>((acc, guard) => and(acc, guard), out);
+  }
+
+  private whereLevel(model: string, where: unknown, guards: Map<string, Where>): unknown {
     if (!isObject(where)) return where;
     const relations = this.relations(model);
     const out: Args = {};
@@ -249,10 +260,17 @@ export class TenantScopeRewriter {
       const relation = relations.get(key);
       if (key === 'AND' || key === 'OR' || key === 'NOT') {
         out[key] = Array.isArray(value)
-          ? value.map((item) => this.where(model, item))
-          : this.where(model, value);
+          ? value.map((item) => this.whereLevel(model, item, guards))
+          : this.whereLevel(model, value, guards);
       } else if (relation && isObject(value)) {
         out[key] = this.relationFilter(relation, value);
+        const nullCheck =
+          ('is' in value || 'isNot' in value) &&
+          Object.values(value).every((inner) => inner === null);
+        const pin = relation.isList || nullCheck ? null : this.pinOf(relation.target);
+        // "No related row outside the scope": works for required and optional relations alike,
+        // since Prisma refuses `is: null` on a required one, and keeps rows with no related row.
+        if (pin) guards.set(key, { NOT: { [key]: { is: { NOT: pin } } } });
       } else {
         out[key] = value;
       }
@@ -262,39 +280,32 @@ export class TenantScopeRewriter {
 
   // Workspace-keyed targets are pinned too, or a filter through them (say, global permission →
   // RolePermission → role of another workspace) would tell what another tenant holds.
+  private pinOf(model: string): Where | null {
+    const scoped = SCOPED_MODELS[model];
+    if (scoped) return this.scopeWhere(model, scoped);
+    const keyed = WORKSPACE_KEYED_MODELS[model];
+    return keyed ? this.workspaceWhere(model, Boolean(keyed.globalRows)) : null;
+  }
+
   private relationFilter(relation: Relation, filter: Args): Args {
-    const scoped = SCOPED_MODELS[relation.target];
-    const keyed = WORKSPACE_KEYED_MODELS[relation.target];
-    const pinned = Boolean(scoped ?? keyed);
-    const pin = (): Where =>
-      scoped
-        ? this.scopeWhere(relation.target, scoped)
-        : this.workspaceWhere(relation.target, Boolean(keyed?.globalRows));
     const inScope = (inner: unknown): unknown => {
       const rewritten = this.where(relation.target, inner);
-      return pinned && inner !== null ? and(rewritten, pin()) : rewritten;
+      const pin = inner === null ? null : this.pinOf(relation.target);
+      return pin ? and(rewritten, pin) : rewritten;
     };
-
-    // A negated filter with the pin inside it would hold for every row outside the scope, so the
-    // negation is taken over "matches, or is outside the scope" instead.
-    const negated = (inner: unknown): unknown =>
-      pinned && inner !== null
-        ? { OR: [this.where(relation.target, inner), { NOT: pin() }] }
-        : this.where(relation.target, inner);
 
     if (relation.isList) {
       const out: Args = {};
       for (const [op, inner] of Object.entries(filter)) {
+        const pin = op === 'every' ? this.pinOf(relation.target) : null;
         // `every` must ignore rows outside the scope instead of failing because of them.
-        out[op] = op === 'every' ? negated(inner) : inScope(inner);
+        out[op] = pin ? { OR: [this.where(relation.target, inner), { NOT: pin }] } : inScope(inner);
       }
       return out;
     }
     if ('is' in filter || 'isNot' in filter) {
       const out: Args = {};
-      for (const [op, inner] of Object.entries(filter)) {
-        out[op] = op === 'isNot' ? negated(inner) : inScope(inner);
-      }
+      for (const [op, inner] of Object.entries(filter)) out[op] = inScope(inner);
       return out;
     }
     return inScope(filter) as Args;

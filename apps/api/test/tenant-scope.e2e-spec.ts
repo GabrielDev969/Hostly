@@ -734,8 +734,14 @@ describe('Tenant scope (e2e)', () => {
         negated: await scoped.client.permission.findMany({
           where: { roles: { some: { role: { isNot: { workspaceId: workspaceX } } } } },
         }),
+        notOwn: await scoped.client.rolePermission.count({
+          where: { NOT: { role: { workspaceId: workspaceX } } },
+        }),
+        nestedNot: await scoped.client.permission.findMany({
+          where: { roles: { some: { NOT: { role: { workspaceId: workspaceX } } } } },
+        }),
       }));
-      expect(probe).toEqual({ permissions: [], links: 0, negated: [] });
+      expect(probe).toEqual({ permissions: [], links: 0, negated: [], notOwn: 0, nestedNot: [] });
     });
 
     it('refuses a query naming another workspace, and caches nothing', async () => {

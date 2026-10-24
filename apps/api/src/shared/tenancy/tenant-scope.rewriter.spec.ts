@@ -634,16 +634,20 @@ describe('TenantScopeRewriter', () => {
       }
     });
 
+    const globalOrOwn = { OR: [{ workspaceId: null }, { workspaceId: 'w1' }] };
+    const roleGuard = { NOT: { role: { is: { NOT: { workspaceId: 'w1' } } } } };
+
     it('pins relation filters that reach them, so no filter probes another workspace', () => {
       const rewriter = new TenantScopeRewriter(operator);
-      const globalOrOwn = { OR: [{ workspaceId: null }, { workspaceId: 'w1' }] };
       // Global permissions are readable; the roles they link to must not reveal another workspace.
       expect(
         rewriter.rewrite('Permission', 'findMany', {
           where: { roles: { some: { role: { workspaceId: 'w2' } } } },
         }).where,
       ).toEqual({
-        roles: { some: { role: { workspaceId: 'w2', AND: [{ workspaceId: 'w1' }] } } },
+        roles: {
+          some: { role: { workspaceId: 'w2', AND: [{ workspaceId: 'w1' }] }, AND: [roleGuard] },
+        },
         AND: [globalOrOwn],
       });
       expect(
@@ -653,6 +657,7 @@ describe('TenantScopeRewriter', () => {
       ).toEqual({
         role: { is: { name: 'x', AND: [{ workspaceId: 'w1' }] } },
         permission: { key: 'k', AND: [globalOrOwn] },
+        AND: [roleGuard, { NOT: { permission: { is: { NOT: globalOrOwn } } } }],
       });
       expect(
         rewriter.rewrite('Workspace', 'findMany', {
@@ -665,25 +670,47 @@ describe('TenantScopeRewriter', () => {
       });
     });
 
-    it('takes isNot over rows outside the scope, so a foreign related row never matches', () => {
+    // Without the guard, NOT { role: <own workspace> } would match every link to a foreign role.
+    it('keeps a negated to-one filter (NOT, isNot) from matching rows outside the scope', () => {
       const rewriter = new TenantScopeRewriter(operator);
+      const ownRole = { workspaceId: 'w1', AND: [{ workspaceId: 'w1' }] };
+      expect(
+        rewriter.rewrite('RolePermission', 'count', {
+          where: { NOT: { role: { workspaceId: 'w1' } } },
+        }).where,
+      ).toEqual({ NOT: { role: ownRole }, AND: [roleGuard] });
+      expect(
+        rewriter.rewrite('RolePermission', 'findMany', {
+          where: { AND: [{ NOT: [{ role: { workspaceId: 'w1' } }] }] },
+        }).where,
+      ).toEqual({ AND: [{ NOT: [{ role: ownRole }] }, roleGuard] });
       expect(
         rewriter.rewrite('RolePermission', 'findMany', {
           where: { role: { isNot: { workspaceId: 'w1' } } },
         }).where,
-      ).toEqual({
-        role: { isNot: { OR: [{ workspaceId: 'w1' }, { NOT: { workspaceId: 'w1' } }] } },
-      });
+      ).toEqual({ role: { isNot: ownRole }, AND: [roleGuard] });
+      const clientPin = { organizationId: 'org1', id: 'client-a' };
       expect(
         new TenantScopeRewriter(client).rewrite('Site', 'findMany', {
-          where: { client: { isNot: { name: 'x' } } },
+          where: { NOT: { client: { name: 'x' } } },
         }).where,
       ).toEqual({
-        client: {
-          isNot: { OR: [{ name: 'x' }, { NOT: { organizationId: 'org1', id: 'client-a' } }] },
-        },
-        AND: [{ organizationId: 'org1', clientId: 'client-a' }],
+        NOT: { client: { name: 'x', AND: [clientPin] } },
+        AND: [
+          { NOT: { client: { is: { NOT: clientPin } } } },
+          { organizationId: 'org1', clientId: 'client-a' },
+        ],
       });
+      // A filter on a null column is a real filter, so it keeps the guard.
+      expect(
+        rewriter.rewrite('RolePermission', 'count', {
+          where: { NOT: { role: { description: null } } },
+        }).where,
+      ).toEqual({
+        NOT: { role: { description: null, AND: [{ workspaceId: 'w1' }] } },
+        AND: [roleGuard],
+      });
+      // Only a bare is/isNot null says nothing about the related row, so it needs no guard.
       expect(
         rewriter.rewrite('RolePermission', 'findMany', { where: { role: { isNot: null } } }).where,
       ).toEqual({ role: { isNot: null } });

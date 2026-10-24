@@ -111,8 +111,10 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   operadora altera ou apaga), filtra relações de lista pra esses modelos em `include`/`select`/`_count`/filtros de
   relação, e recusa o que não dá pra filtrar: include a-um pra modelo escopado, `_count: true`, `orderBy` por relação
   escopada, escrita aninhada (use ids escalares ou o delegate do modelo), criação de raiz, `delete` que cascateia em
-  modelo escopado, SQL cru e acesso sem escopo. Filtro de relação negado (`every`, `isNot`) nega "casa ou está fora do
-  escopo", senão a linha de outro tenant satisfaria a negação. Em qualquer modelo, escopado ou não, escrita que põe
+  modelo escopado, SQL cru e acesso sem escopo. Filtro de relação a-um pra modelo fixado deixa no `where` daquele
+  nível, fora de qualquer `NOT`, a condição "nenhuma linha relacionada fora do escopo"
+  (`NOT: { rel: { is: { NOT: <escopo> } } }`): sem ela, um `NOT`/`isNot` faria a linha de outro tenant casar. Filtro de
+  lista olha só as linhas do escopo (`every` ignora as de fora). Em qualquer modelo, escopado ou não, escrita que põe
   `workspaceId` ou `organizationId` fora do tenant do escopo dá 403, e o `update` que os grava só alcança linha do
   próprio tenant.
 - **Modelos com `workspaceId` sem dimensão de cliente** (`Role`, `Permission`, `WorkspaceFeatureFlag`) ficam em
