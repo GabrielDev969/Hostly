@@ -10,6 +10,7 @@ import { EnableTwoFactorUseCase } from '../use-cases/enable-2fa.use-case';
 import { DisableTwoFactorUseCase } from '../use-cases/disable-2fa.use-case';
 import { VerifyTwoFactorUseCase } from '../use-cases/verify-2fa.use-case';
 import { RequestEmailVerificationUseCase } from '../use-cases/request-email-verification.use-case';
+import { ResendEmailVerificationUseCase } from '../use-cases/resend-email-verification.use-case';
 import { VerifyEmailUseCase } from '../use-cases/verify-email.use-case';
 import { ForgotPasswordUseCase } from '../use-cases/forgot-password.use-case';
 import { ResetPasswordUseCase } from '../use-cases/reset-password.use-case';
@@ -31,6 +32,7 @@ describe('AuthController', () => {
   let disable2fa: jest.Mocked<DisableTwoFactorUseCase>;
   let verify2fa: jest.Mocked<VerifyTwoFactorUseCase>;
   let requestEmailVerification: jest.Mocked<RequestEmailVerificationUseCase>;
+  let resendEmailVerification: jest.Mocked<ResendEmailVerificationUseCase>;
   let verifyEmail: jest.Mocked<VerifyEmailUseCase>;
   let forgotPassword: jest.Mocked<ForgotPasswordUseCase>;
   let resetPassword: jest.Mocked<ResetPasswordUseCase>;
@@ -61,6 +63,9 @@ describe('AuthController', () => {
     requestEmailVerification = {
       execute: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<RequestEmailVerificationUseCase>;
+    resendEmailVerification = {
+      execute: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<ResendEmailVerificationUseCase>;
     verifyEmail = {
       execute: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<VerifyEmailUseCase>;
@@ -83,6 +88,7 @@ describe('AuthController', () => {
       disable2fa,
       verify2fa,
       requestEmailVerification,
+      resendEmailVerification,
       verifyEmail,
       forgotPassword,
       resetPassword,
@@ -248,6 +254,14 @@ describe('AuthController', () => {
   it('verifyEmailEndpoint forwards token', async () => {
     await controller.verifyEmailEndpoint({ token: 'tok' });
     expect(verifyEmail.execute).toHaveBeenCalledWith('tok');
+  });
+
+  it('resendEmailVerificationEndpoint forwards the email and the client IP', async () => {
+    await controller.resendEmailVerificationEndpoint({ email: 'a@b.c' }, '10.0.0.1');
+    expect(resendEmailVerification.execute).toHaveBeenCalledWith({
+      email: 'a@b.c',
+      ip: '10.0.0.1',
+    });
   });
 
   it('forgotPasswordEndpoint forwards email', async () => {

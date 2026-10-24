@@ -14,6 +14,7 @@ describe('RequestEmailVerificationUseCase', () => {
   beforeEach(() => {
     users = {
       findById: jest.fn(),
+      findByEmail: jest.fn(),
     } as unknown as jest.Mocked<UsersRepository>;
     tokens = {
       create: jest.fn(),
@@ -65,5 +66,62 @@ describe('RequestEmailVerificationUseCase', () => {
     const emailArg = emailDispatcher.enqueue.mock.calls[0]![0];
     expect(emailArg.to).toBe('a@b.c');
     expect(emailArg.subject).toContain('email');
+  });
+
+  describe('executeForEmail', () => {
+    it('does nothing for an email without an account', async () => {
+      users.findByEmail.mockResolvedValue(null);
+      await useCase.executeForEmail('nobody@b.c');
+      expect(users.findById).not.toHaveBeenCalled();
+      expect(tokens.deletePendingForUser).not.toHaveBeenCalled();
+      expect(tokens.create).not.toHaveBeenCalled();
+      expect(emailDispatcher.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for an email already verified', async () => {
+      users.findByEmail.mockResolvedValue({
+        id: 'u1',
+        email: 'a@b.c',
+        name: 'Jane',
+        emailVerifiedAt: new Date(),
+      } as User);
+      await useCase.executeForEmail('a@b.c');
+      expect(tokens.deletePendingForUser).not.toHaveBeenCalled();
+      expect(tokens.create).not.toHaveBeenCalled();
+      expect(emailDispatcher.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('replaces the pending token and emails a new link to an unverified account', async () => {
+      users.findByEmail.mockResolvedValue({
+        id: 'u1',
+        email: 'a@b.c',
+        name: 'Jane',
+        emailVerifiedAt: null,
+      } as User);
+      await useCase.executeForEmail('a@b.c');
+
+      expect(users.findByEmail).toHaveBeenCalledWith('a@b.c');
+      // Never through the cached findById: emailVerifiedAt comes fresh from the database.
+      expect(users.findById).not.toHaveBeenCalled();
+      expect(tokens.deletePendingForUser).toHaveBeenCalledWith('u1');
+      expect(tokens.deletePendingForUser.mock.invocationCallOrder[0]).toBeLessThan(
+        tokens.create.mock.invocationCallOrder[0]!,
+      );
+      const createArg = tokens.create.mock.calls[0]![0];
+      expect(createArg.userId).toBe('u1');
+      expect(createArg.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+      const ttlMs = createArg.expiresAt.getTime() - Date.now();
+      expect(ttlMs).toBeGreaterThan(23 * 60 * 60 * 1000);
+      expect(ttlMs).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
+
+      const emailArg = emailDispatcher.enqueue.mock.calls[0]![0];
+      expect(emailArg.to).toBe('a@b.c');
+      const linkToken = new URL(emailArg.text.match(/https?:\/\/\S+/)![0]).searchParams.get(
+        'token',
+      );
+      expect(linkToken).toMatch(/^[0-9a-f]{64}$/);
+      // Only the hash is stored; the raw token goes nowhere but the link.
+      expect(createArg.tokenHash).not.toBe(linkToken);
+    });
   });
 });

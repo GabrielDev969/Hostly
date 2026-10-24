@@ -5,6 +5,7 @@ import { Button, LinkButton } from '@/components/ui';
 import { ApiError } from '@/lib/api/errors';
 import { useSession } from '@/lib/session/session-provider';
 import { ForgotPasswordForm } from './forgot-password';
+import { ResendVerification } from './resend-verification';
 import styles from './login.module.css';
 
 // The API answers both with 401; only an expired challenge sends the user back to the password.
@@ -61,16 +62,20 @@ export function LoginForm({
     startAtForgot ? { kind: 'forgot' } : { kind: 'credentials', notice },
   );
   const [error, setError] = useState<string | null>(null);
+  // The e-mail the login refused as unconfirmed: the resend goes to it, never to a retyped one.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const errorId = useId();
 
   const submitCredentials = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
+    const email = field(data, 'email');
     setSubmitting(true);
     setError(null);
+    setUnverifiedEmail(null);
     try {
-      const result = await login(field(data, 'email'), field(data, 'password'));
+      const result = await login(email, field(data, 'password'));
       if (result.kind === 'two-factor') {
         setStep({ kind: 'two-factor', challenge: result.challenge, recovery: false });
       } else {
@@ -78,6 +83,7 @@ export function LoginForm({
       }
     } catch (caught) {
       setError(credentialsError(caught));
+      if (caught instanceof ApiError && caught.status === 403) setUnverifiedEmail(email);
     } finally {
       setSubmitting(false);
     }
@@ -169,6 +175,7 @@ export function LoginForm({
             <LinkButton
               onClick={() => {
                 setError(null);
+                setUnverifiedEmail(null);
                 setStep({ kind: 'forgot' });
               }}
             >
@@ -176,6 +183,7 @@ export function LoginForm({
             </LinkButton>
           </div>
         </form>
+        {unverifiedEmail && <ResendVerification email={unverifiedEmail} />}
         {footer}
       </div>
     );

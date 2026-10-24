@@ -98,6 +98,10 @@
   width: 100%;
 }
 
+.resend {
+  margin: 16px 0;
+}
+
 .links {
   display: flex;
   justify-content: space-between;
