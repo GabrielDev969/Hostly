@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative } from 'path';
 import { Prisma } from '@prisma/client';
-import { SCOPED_MODELS } from './scoped-models';
+import { SCOPED_MODELS, WORKSPACE_KEYED_MODELS } from './scoped-models';
 import { RELATIONS } from './tenant-scope.rewriter';
 
 const API_ROOT = join(__dirname, '..', '..', '..');
@@ -16,7 +16,7 @@ const RAW_ACCESS_ALLOWLIST: Record<string, string> = {
   'src/modules/audit/repositories/prisma-audit-logs.repository.ts':
     'the append-only hash chain, retention and verification span every tenant; listing uses the scoped client',
   'src/modules/rbac/repositories/prisma-roles.repository.ts':
-    'counts memberships of a role to block deleting a role that is still in use',
+    'counts memberships of a role to block deleting a role that is still in use, and deletes the role (pinned to its workspace), which the scoped client refuses because Role.members reaches WorkspaceMember; the rest uses the scoped client',
   'src/modules/users/repositories/prisma-users.repository.ts':
     'user listings filter by membership; only operator-scoped memberships can hold user:* (see PERMISSION_CEILING)',
   'src/modules/invitations/repositories/prisma-invitations.repository.ts':
@@ -95,6 +95,20 @@ describe('tenant scope registry', () => {
       .map((model) => model.name)
       .filter((name) => !SCOPED_MODELS[name]);
     expect(unregistered).toEqual([]);
+  });
+
+  it('pins every other workspaceId model to the workspace, and only those', () => {
+    const withWorkspace = Prisma.dmmf.datamodel.models
+      .filter((model) => model.fields.some((field) => field.name === 'workspaceId'))
+      .map((model) => model.name)
+      .filter((name) => !SCOPED_MODELS[name]);
+    expect(withWorkspace.sort()).toEqual(Object.keys(WORKSPACE_KEYED_MODELS).sort());
+    expect(Object.keys(WORKSPACE_KEYED_MODELS).sort()).toEqual([
+      'Permission',
+      'Role',
+      'WorkspaceFeatureFlag',
+    ]);
+    expect(WORKSPACE_KEYED_MODELS.Permission?.globalRows).toBe(true);
   });
 
   it('scopes clients, sites, robots and invitations by their client column', () => {

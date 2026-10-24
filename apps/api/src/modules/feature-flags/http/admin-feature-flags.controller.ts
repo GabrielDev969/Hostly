@@ -27,12 +27,14 @@ import {
   ApiServerError,
   ApiValidationError,
 } from '@shared/swagger/api-errors.decorator';
+import { TenantContext } from '@shared/tenancy/tenant-context';
 import { FeatureFlagsService } from '../services/feature-flags.service';
 import { FeatureFlagResponseDto } from './dto/feature-flag-response.dto';
 import { SetFeatureFlagDto } from './dto/set-feature-flag.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
+// Super admins work across tenants and the SuperAdminGuard sets no scope, so every call is system work.
 @Controller({ path: 'admin/workspaces/:workspaceId/features', version: '1' })
 @UseGuards(SuperAdminGuard)
 export class AdminFeatureFlagsController {
@@ -49,7 +51,7 @@ export class AdminFeatureFlagsController {
   async list(
     @Param('workspaceId', ParseUUIDPipe) workspaceId: string,
   ): Promise<FeatureFlagResponseDto[]> {
-    return this.features.getEffective(workspaceId);
+    return TenantContext.runAsSystem(() => this.features.getEffective(workspaceId));
   }
 
   @Put(':key')
@@ -71,7 +73,9 @@ export class AdminFeatureFlagsController {
     @Param('key') key: string,
     @Body() dto: SetFeatureFlagDto,
   ): Promise<{ workspaceId: string; key: string; enabled: boolean }> {
-    const row = await this.features.setOverride(workspaceId, key, dto.enabled);
+    const row = await TenantContext.runAsSystem(() =>
+      this.features.setOverride(workspaceId, key, dto.enabled),
+    );
     return {
       workspaceId: row.workspaceId,
       key: row.key,
@@ -98,6 +102,6 @@ export class AdminFeatureFlagsController {
     @Param('workspaceId', ParseUUIDPipe) workspaceId: string,
     @Param('key') key: string,
   ): Promise<void> {
-    await this.features.clearOverride(workspaceId, key);
+    await TenantContext.runAsSystem(() => this.features.clearOverride(workspaceId, key));
   }
 }

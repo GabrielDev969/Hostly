@@ -11,6 +11,7 @@ import { WorkspaceMembersRepository } from '@modules/workspaces/repositories/wor
 import { RolesRepository } from '@modules/rbac/repositories/roles.repository.interface';
 import { assertRoleFitsScope } from '@modules/rbac/constants/roles';
 import { CryptoUtil } from '@shared/utils/crypto.util';
+import { TenantContext } from '@shared/tenancy/tenant-context';
 
 interface AcceptInvitationInput {
   token: string;
@@ -51,8 +52,11 @@ export class AcceptInvitationUseCase {
     if (existingMembership)
       throw new ConflictException('You are already a member of this workspace');
 
-    // The role and the client may have changed since the invitation was sent.
-    const role = await this.roles.findByIdInWorkspace(invitation.roleId, invitation.workspaceId);
+    // The role and the client may have changed since the invitation was sent. The user has no
+    // membership yet, so no scope: the lookup is system work, pinned to the invitation's workspace.
+    const role = await TenantContext.runAsSystem(() =>
+      this.roles.findByIdInWorkspace(invitation.roleId, invitation.workspaceId),
+    );
     if (!role) throw new ConflictException('The role of this invitation no longer exists');
     assertRoleFitsScope(role, { clientId: invitation.clientId, advertiserId: null });
 

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CreatePermissionData, PermissionsRepository } from './permissions.repository.interface';
 import { Permission } from '../entities/permission.entity';
-import { PrismaService } from '@shared/database/prisma.service';
+import { ScopedPrismaService } from '@shared/tenancy/scoped-prisma.service';
 import { Permission as PermissionPrisma } from '@prisma/client';
 import { Cacheable } from '@shared/cache/cacheable.decorator';
 import { CACHE_NS, CACHE_TTL } from '@shared/cache/cache.constants';
@@ -10,7 +10,7 @@ import { CacheService } from '@shared/cache/cache.service';
 @Injectable()
 export class PrismaPermissionsRepository extends PermissionsRepository {
   constructor(
-    private prisma: PrismaService,
+    private scoped: ScopedPrismaService,
     protected readonly cacheService: CacheService,
   ) {
     super();
@@ -22,7 +22,7 @@ export class PrismaPermissionsRepository extends PermissionsRepository {
     ttlMs: CACHE_TTL.oneDay,
   })
   async findAll(): Promise<Permission[]> {
-    const perms = await this.prisma.permission.findMany({
+    const perms = await this.scoped.client.permission.findMany({
       where: { workspaceId: null },
       orderBy: [{ category: 'asc' }, { key: 'asc' }],
     });
@@ -30,21 +30,21 @@ export class PrismaPermissionsRepository extends PermissionsRepository {
   }
 
   async findByKey(key: string): Promise<Permission | null> {
-    const perm = await this.prisma.permission.findFirst({
+    const perm = await this.scoped.client.permission.findFirst({
       where: { key, workspaceId: null },
     });
     return perm ? this.toEntity(perm) : null;
   }
 
   async findManyByKeys(keys: string[]): Promise<Permission[]> {
-    const perms = await this.prisma.permission.findMany({
+    const perms = await this.scoped.client.permission.findMany({
       where: { key: { in: keys }, workspaceId: null },
     });
     return perms.map((p) => this.toEntity(p));
   }
 
   async findByCategory(category: string): Promise<Permission[]> {
-    const perms = await this.prisma.permission.findMany({
+    const perms = await this.scoped.client.permission.findMany({
       where: { category, workspaceId: null },
       orderBy: { key: 'asc' },
     });
@@ -52,7 +52,7 @@ export class PrismaPermissionsRepository extends PermissionsRepository {
   }
 
   async findByKeyInScope(key: string, workspaceId: string): Promise<Permission | null> {
-    const perm = await this.prisma.permission.findFirst({
+    const perm = await this.scoped.client.permission.findFirst({
       where: {
         key,
         OR: [{ workspaceId: null }, { workspaceId }],
@@ -62,7 +62,7 @@ export class PrismaPermissionsRepository extends PermissionsRepository {
   }
 
   async findManyByKeysInScope(keys: string[], workspaceId: string): Promise<Permission[]> {
-    const perms = await this.prisma.permission.findMany({
+    const perms = await this.scoped.client.permission.findMany({
       where: {
         key: { in: keys },
         OR: [{ workspaceId: null }, { workspaceId }],
@@ -72,7 +72,7 @@ export class PrismaPermissionsRepository extends PermissionsRepository {
   }
 
   async findAllForWorkspace(workspaceId: string): Promise<Permission[]> {
-    const perms = await this.prisma.permission.findMany({
+    const perms = await this.scoped.client.permission.findMany({
       where: { OR: [{ workspaceId: null }, { workspaceId }] },
       orderBy: [{ workspaceId: 'asc' }, { category: 'asc' }, { key: 'asc' }],
     });
@@ -80,14 +80,14 @@ export class PrismaPermissionsRepository extends PermissionsRepository {
   }
 
   async findByIdInWorkspace(id: string, workspaceId: string): Promise<Permission | null> {
-    const perm = await this.prisma.permission.findFirst({
+    const perm = await this.scoped.client.permission.findFirst({
       where: { id, workspaceId },
     });
     return perm ? this.toEntity(perm) : null;
   }
 
   async create(data: CreatePermissionData): Promise<Permission> {
-    const perm = await this.prisma.permission.create({
+    const perm = await this.scoped.client.permission.create({
       data: {
         key: data.key,
         description: data.description ?? null,
@@ -99,7 +99,7 @@ export class PrismaPermissionsRepository extends PermissionsRepository {
   }
 
   async delete(id: string): Promise<void> {
-    await this.prisma.permission.delete({ where: { id } });
+    await this.scoped.client.permission.delete({ where: { id } });
   }
 
   private toEntity(raw: PermissionPrisma): Permission {

@@ -40,7 +40,7 @@ describe('DeleteRoleUseCase', () => {
 
     await useCase.execute({ id: 'r1', workspaceId: 'w1' });
 
-    expect(roles.delete).toHaveBeenCalledWith('r1');
+    expect(roles.delete).toHaveBeenCalledWith('r1', 'w1');
   });
 
   it('throws 404 when role is not in the workspace', async () => {

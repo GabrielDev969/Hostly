@@ -393,7 +393,9 @@ describe('TenantScopeRewriter', () => {
         rewriter.rewrite('Role', 'create', { data: { name: 'x', workspaceId: 'w1' } }),
       ).toEqual({ data: { name: 'x', workspaceId: 'w1' } });
       const rename = { where: { id: 'r1' }, data: { name: 'y' } };
-      expect(new TenantScopeRewriter(client).rewrite('Role', 'update', rename)).toEqual(rename);
+      expect(() => new TenantScopeRewriter(client).rewrite('Role', 'update', rename)).toThrow(
+        ForbiddenException,
+      );
     });
 
     it('refuses to set a tenant key without a scope', () => {
@@ -417,6 +419,204 @@ describe('TenantScopeRewriter', () => {
           data: { userId: 'u1', role: { connect: { id: 'r1' } } },
         }),
       ).toThrow(TenantScopeError);
+    });
+
+    it('rejects the nested invitation write from the issue', () => {
+      expect(() =>
+        new TenantScopeRewriter(operator).rewrite('User', 'update', {
+          where: { id: 'u1' },
+          data: {
+            invitationsSent: {
+              create: { email: 'a@b.c', roleId: 'r1', workspaceId: 'w2', tokenHash: 'h' },
+            },
+          },
+        }),
+      ).toThrow(TenantScopeError);
+      expect(() =>
+        new TenantScopeRewriter(operator).rewrite('User', 'update', {
+          where: { id: 'u1' },
+          data: {
+            invitationsSent: { updateMany: { where: {}, data: { workspaceId: 'w2' } } },
+          },
+        }),
+      ).toThrow(TenantScopeError);
+    });
+
+    it.each([
+      [
+        'create',
+        { user: { create: { email: 'a@b.c', name: 'A', invitationsSent: { create: {} } } } },
+      ],
+      ['update', { user: { update: { invitationsSent: { create: { workspaceId: 'w2' } } } } }],
+      [
+        'update with where and data',
+        { user: { update: { where: {}, data: { memberships: { create: {} } } } } },
+      ],
+      ['upsert', { user: { upsert: { create: {}, update: { invitationsSent: { create: {} } } } } }],
+      [
+        'connectOrCreate',
+        { user: { connectOrCreate: { where: {}, create: { memberships: { create: {} } } } } },
+      ],
+    ])('rejects a nested write that reaches a tenant model a level down (%s)', (_, data) => {
+      expect(() =>
+        new TenantScopeRewriter(operator).rewrite('EmailVerifyToken', 'update', {
+          where: { id: 't1' },
+          data,
+        }),
+      ).toThrow(TenantScopeError);
+    });
+
+    it('still lets nested writes between models with no tenant column through', () => {
+      const args = {
+        where: { id: 'u1' },
+        data: { sessions: { create: [{ refreshTokenHash: 'h', expiresAt: new Date(0) }] } },
+      };
+      expect(new TenantScopeRewriter(operator).rewrite('User', 'update', args)).toEqual(args);
+    });
+  });
+
+  describe('workspace-keyed models', () => {
+    it('pins reads and writes of roles and feature flags to the own workspace', () => {
+      const rewriter = new TenantScopeRewriter(operator);
+      // A role of another organization, reached by id alone, now finds no row.
+      expect(
+        rewriter.rewrite('Role', 'update', {
+          where: { id: 'other-org-role' },
+          data: { name: 'x' },
+        }),
+      ).toEqual({
+        where: { id: 'other-org-role', AND: [{ workspaceId: 'w1' }] },
+        data: { name: 'x' },
+      });
+      expect(
+        rewriter.rewrite('WorkspaceFeatureFlag', 'updateMany', {
+          where: {},
+          data: { enabled: true },
+        }),
+      ).toEqual({ where: { workspaceId: 'w1' }, data: { enabled: true } });
+      expect(
+        rewriter.rewrite('WorkspaceFeatureFlag', 'upsert', {
+          where: { workspaceId_key: { workspaceId: 'w1', key: 'k' } },
+          update: { enabled: true },
+          create: { key: 'k', enabled: true },
+        }),
+      ).toEqual({
+        where: { workspaceId_key: { workspaceId: 'w1', key: 'k' }, AND: [{ workspaceId: 'w1' }] },
+        update: { enabled: true },
+        create: { key: 'k', enabled: true, workspaceId: 'w1' },
+      });
+    });
+
+    it('lets client users and advertisers read them, filtered by workspace, but never write', () => {
+      for (const scope of [client, advertiser]) {
+        const rewriter = new TenantScopeRewriter(scope);
+        expect(rewriter.rewrite('WorkspaceFeatureFlag', 'findMany', {})).toEqual({
+          where: { workspaceId: 'w1' },
+        });
+        expect(rewriter.rewrite('Role', 'findFirst', { where: { id: 'r1' } })).toEqual({
+          where: { id: 'r1', AND: [{ workspaceId: 'w1' }] },
+        });
+        for (const [model, operation, args] of [
+          ['Role', 'create', { data: { name: 'x' } }],
+          ['Role', 'updateMany', { where: {}, data: { name: 'x' } }],
+          ['Permission', 'delete', { where: { id: 'p1' } }],
+          ['WorkspaceFeatureFlag', 'upsert', { where: { id: 'f1' }, create: {}, update: {} }],
+        ] as const) {
+          expect(() => rewriter.rewrite(model, operation, args)).toThrow(ForbiddenException);
+        }
+      }
+    });
+
+    it('refuses them without a scope (default deny)', () => {
+      expect(() => new TenantScopeRewriter(null).rewrite('Role', 'findMany', {})).toThrow(
+        TenantScopeError,
+      );
+      expect(() =>
+        new TenantScopeRewriter(null).rewrite('WorkspaceFeatureFlag', 'deleteMany', { where: {} }),
+      ).toThrow(TenantScopeError);
+    });
+
+    it('reads global permissions but writes only the own workspace ones', () => {
+      const rewriter = new TenantScopeRewriter(operator);
+      const own = { OR: [{ workspaceId: null }, { workspaceId: 'w1' }] };
+      expect(rewriter.rewrite('Permission', 'findMany', { where: { key: 'a' } })).toEqual({
+        where: { key: 'a', AND: [own] },
+      });
+      expect(
+        rewriter.rewrite('Permission', 'findFirst', { where: { key: 'a', workspaceId: null } }),
+      ).toEqual({ where: { key: 'a', workspaceId: null, AND: [own] } });
+      expect(rewriter.rewrite('Permission', 'delete', { where: { id: 'global' } })).toEqual({
+        where: { id: 'global', AND: [{ workspaceId: 'w1' }] },
+      });
+      expect(
+        rewriter.rewrite('Permission', 'create', { data: { key: 'a', category: 'c' } }),
+      ).toEqual({ data: { key: 'a', category: 'c', workspaceId: 'w1' } });
+      expect(() =>
+        rewriter.rewrite('Permission', 'create', {
+          data: { key: 'a', category: 'c', workspaceId: null },
+        }),
+      ).toThrow(ForbiddenException);
+      expect(() =>
+        rewriter.rewrite('Permission', 'update', {
+          where: { id: 'global', workspaceId: null },
+          data: { description: 'x' },
+        }),
+      ).toThrow(TenantScopeError);
+    });
+
+    it.each([
+      ['Role', 'findMany', { where: { workspaceId: 'w2' } }],
+      ['Role', 'findUnique', { where: { workspaceId_name: { workspaceId: 'w2', name: 'x' } } }],
+      ['Role', 'findFirst', { where: { id: 'r1', workspaceId: { equals: 'w2' } } }],
+      ['Role', 'findMany', { where: { workspaceId: { in: ['w1', 'w2'] } } }],
+      ['Role', 'count', { where: { AND: [{ name: 'x' }, { workspaceId: 'w2' }] } }],
+      ['Permission', 'findMany', { where: { OR: [{ workspaceId: null }, { workspaceId: 'w2' }] } }],
+      ['WorkspaceFeatureFlag', 'findMany', { where: { workspaceId: 'w2' } }],
+      [
+        'WorkspaceFeatureFlag',
+        'findUnique',
+        { where: { workspaceId_key: { workspaceId: 'w2', key: 'k' } } },
+      ],
+      ['WorkspaceFeatureFlag', 'deleteMany', { where: { workspaceId: 'w2', key: 'k' } }],
+    ])('refuses %s.%s naming another workspace instead of returning nothing', (model, op, args) => {
+      expect(() => new TenantScopeRewriter(operator).rewrite(model, op, args)).toThrow(
+        TenantScopeError,
+      );
+    });
+
+    it('accepts the own workspace, plain or inside a compound key', () => {
+      const rewriter = new TenantScopeRewriter(operator);
+      expect(
+        rewriter.rewrite('Role', 'findUnique', {
+          where: { workspaceId_name: { workspaceId: 'w1', name: 'x' } },
+        }),
+      ).toEqual({
+        where: { workspaceId_name: { workspaceId: 'w1', name: 'x' }, AND: [{ workspaceId: 'w1' }] },
+      });
+      const mine = { OR: [{ workspaceId: null }, { workspaceId: { equals: 'w1' } }] };
+      expect(rewriter.rewrite('Permission', 'findMany', { where: mine })).toEqual({
+        where: { ...mine, AND: [{ OR: [{ workspaceId: null }, { workspaceId: 'w1' }] }] },
+      });
+    });
+
+    it.each([
+      [
+        'Role',
+        'update',
+        { where: { id: 'r1' }, data: { permissions: { create: { permissionId: 'p' } } } },
+      ],
+      ['Role', 'create', { data: { name: 'x', permissions: { createMany: { data: [] } } } }],
+      [
+        'RolePermission',
+        'create',
+        { data: { role: { connect: { id: 'r1' } }, permission: { connect: { id: 'p1' } } } },
+      ],
+      ['Permission', 'update', { where: { id: 'p1' }, data: { roles: { deleteMany: {} } } }],
+      ['Workspace', 'update', { where: { id: 'w1' }, data: { featureFlags: { create: {} } } }],
+    ])('rejects nested writes through %s.%s', (model, operation, args) => {
+      expect(() => new TenantScopeRewriter(operator).rewrite(model, operation, args)).toThrow(
+        TenantScopeError,
+      );
     });
   });
 });

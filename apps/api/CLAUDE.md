@@ -113,6 +113,21 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   escopada, escrita aninhada (use ids escalares ou o delegate do modelo), criação de raiz, `delete` que cascateia em
   modelo escopado, SQL cru e acesso sem escopo. Em qualquer modelo, escopado ou não, escrita que põe `workspaceId` ou
   `organizationId` fora do tenant do escopo dá 403, e o `update` que os grava só alcança linha do próprio tenant.
+- **Modelos com `workspaceId` sem dimensão de cliente** (`Role`, `Permission`, `WorkspaceFeatureFlag`) ficam em
+  `WORKSPACE_KEYED_MODELS`, não em `SCOPED_MODELS`: relações a-um chegam neles (`WorkspaceMember.role`,
+  `RolePermission.permission`) e cliente e anunciante leem flags e o papel dos membros. No client com escopo:
+  - o `where` deles sempre ganha `workspaceId` do escopo;
+  - `where` que cita outro workspace, direto ou em chave composta (`workspaceId_name`, `workspaceId_key`), dá
+    `TenantScopeError`, em vez de voltar vazio e o `@Cacheable` guardar o vazio;
+  - o create sem `workspaceId` ganha o do escopo;
+  - só escopo de operadora escreve (403 pra cliente e anunciante).
+  - A `Permission` global (`workspaceId` nulo) aparece na leitura, mas escrita nenhuma a alcança; só o seed e
+    `runAsSystem` a gravam.
+  - O `delete` de papel fica no client cru, com `where: { id, workspaceId }`, porque `Role.members` chega no
+    `WorkspaceMember`.
+  - O aceite de convite (sem membership) e as rotas de flag do super admin (sem escopo) rodam em `runAsSystem`.
+- A recusa de escrita aninhada vale em todo nível (`create`, `createMany`, `connectOrCreate`, `update`, `upsert` e
+  `updateMany` aninhados) quando o modelo ou o alvo está em `SCOPED_MODELS` ou `WORKSPACE_KEYED_MODELS`.
 - No `Client`, o `clientField` é o próprio `id`: o usuário de cliente só alcança a linha do cliente dele. `Client`,
   `Site` e `Invitation` não têm `advertiserField`, então o anunciante leva 403 neles. O convite só leva `clientId`
   (papel de cliente) quando quem convida é a operadora; o cliente interno de cada organização (robôs próprios) nasce
@@ -166,7 +181,8 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   `createTestApp({ logs })` manda o log do pino de verdade (nível `trace`) pra um stream, pra provar que segredo não
   vai pro log.
 - **Tabela de negócio nova** entra em `SCOPED_MODELS` (`src/shared/tenancy/scoped-models.ts`). O
-  `tenant-scope.registry.spec.ts` falha se um modelo com `organizationId`/`clientId`/`advertiserId` ficar de fora, se um
+  `tenant-scope.registry.spec.ts` falha se um modelo com `organizationId`/`clientId`/`advertiserId` ficar de fora (e um
+  com `workspaceId` fora dos dois registros), se um
   arquivo usar modelo escopado por client cru (`PrismaService`, `PrismaClient` ou `Prisma.TransactionClient`; por ponto,
   colchete, destructuring, relação ou SQL cru citando a tabela entre aspas) fora da allowlist (com motivo), ou se a
   convenção de chave estrangeira `<relação>Id` deixar de valer (é dela que sai "lista ou a-um", porque o DMMF de

@@ -268,7 +268,12 @@ describe('Tenant scope (e2e)', () => {
       // the effective flag is read from the service the endpoint delegates to.
       const { FeatureFlagsService } =
         require('../src/modules/feature-flags/services/feature-flags.service') as typeof import('../src/modules/feature-flags/services/feature-flags.service');
-      expect(await app.get(FeatureFlagsService).isEnabled(workspaceX, 'billing')).toBe(false);
+      // The service reads through the scoped client, as it does behind the WorkspaceGuard.
+      expect(
+        await TenantContext.runWithScope(scopeOf({}), () =>
+          app.get(FeatureFlagsService).isEnabled(workspaceX, 'billing'),
+        ),
+      ).toBe(false);
     });
   });
 
@@ -556,6 +561,181 @@ describe('Tenant scope (e2e)', () => {
       await expect(
         TenantContext.run(async () => await scoped.client.workspaceMember.findMany()),
       ).rejects.toBeInstanceOf(TenantScopeError);
+    });
+  });
+
+  describe('workspace-keyed models (roles, permissions, feature flags)', () => {
+    const asOperatorX = <T>(fn: () => Promise<T>) => TenantContext.runWithScope(scopeOf({}), fn);
+    const asOperatorY = <T>(fn: () => Promise<T>) =>
+      TenantContext.runWithScope(
+        scopeOf({ organizationId: organizationY, workspaceId: workspaceY }),
+        fn,
+      );
+
+    it("never renames another organization's role reached by id", async () => {
+      const roleX = await getPrisma().role.create({
+        data: { name: 'keyed-x', workspaceId: workspaceX },
+      });
+
+      await expect(
+        asOperatorY(() =>
+          scoped.client.role.update({ where: { id: roleX.id }, data: { name: 'hijacked' } }),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        asOperatorY(() =>
+          scoped.client.role.updateMany({ where: { id: roleX.id }, data: { name: 'hijacked' } }),
+        ),
+      ).resolves.toEqual({ count: 0 });
+      await expect(
+        TenantContext.runWithScope(scopeOf({ clientId: CLIENT_A }), () =>
+          scoped.client.role.update({ where: { id: roleX.id }, data: { name: 'hijacked' } }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(await getPrisma().role.findUniqueOrThrow({ where: { id: roleX.id } })).toMatchObject({
+        name: 'keyed-x',
+      });
+    });
+
+    it('reads global permissions but never writes them', async () => {
+      const global = await getPrisma().permission.findFirstOrThrow({
+        where: { workspaceId: null },
+      });
+      const customY = await getPrisma().permission.create({
+        data: { key: 'custom:y', category: 'custom', workspaceId: workspaceY },
+      });
+
+      const seen = await asOperatorX(() => scoped.client.permission.findMany());
+      expect(seen.some((p) => p.id === global.id)).toBe(true);
+      expect(seen.some((p) => p.id === customY.id)).toBe(false);
+      expect(seen.every((p) => p.workspaceId === null || p.workspaceId === workspaceX)).toBe(true);
+
+      await expect(
+        asOperatorX(() =>
+          scoped.client.permission.update({
+            where: { id: global.id },
+            data: { description: 'hijacked' },
+          }),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        asOperatorX(() => scoped.client.permission.deleteMany({ where: { id: global.id } })),
+      ).resolves.toEqual({ count: 0 });
+      await expect(
+        asOperatorX(() =>
+          scoped.client.permission.create({
+            data: { key: 'custom:global', category: 'custom', workspaceId: null },
+          }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      const created = await asOperatorX(() =>
+        scoped.client.permission.create({ data: { key: 'custom:x', category: 'custom' } }),
+      );
+      expect(created.workspaceId).toBe(workspaceX);
+
+      expect(await getPrisma().permission.findUniqueOrThrow({ where: { id: global.id } })).toEqual(
+        global,
+      );
+      expect(await getPrisma().permission.count({ where: { key: 'custom:global' } })).toBe(0);
+    });
+
+    it("never touches another workspace's feature flags", async () => {
+      const flagX = await getPrisma().workspaceFeatureFlag.create({
+        data: { workspaceId: workspaceX, key: 'beta:usage-graphs', enabled: false },
+      });
+
+      await expect(
+        asOperatorY(() =>
+          scoped.client.workspaceFeatureFlag.updateMany({ where: {}, data: { enabled: true } }),
+        ),
+      ).resolves.toEqual({ count: 0 });
+      await expect(
+        asOperatorY(() => scoped.client.workspaceFeatureFlag.deleteMany({ where: {} })),
+      ).resolves.toEqual({ count: 0 });
+      expect(
+        await getPrisma().workspaceFeatureFlag.findUniqueOrThrow({ where: { id: flagX.id } }),
+      ).toEqual(flagX);
+      await getPrisma().workspaceFeatureFlag.delete({ where: { id: flagX.id } });
+    });
+
+    it('refuses a query naming another workspace, and caches nothing', async () => {
+      const { RolesRepository } =
+        require('../src/modules/rbac/repositories/roles.repository.interface') as typeof import('../src/modules/rbac/repositories/roles.repository.interface');
+      const { FeatureFlagsService } =
+        require('../src/modules/feature-flags/services/feature-flags.service') as typeof import('../src/modules/feature-flags/services/feature-flags.service');
+      const { CacheService } =
+        require('../src/shared/cache/cache.service') as typeof import('../src/shared/cache/cache.service');
+      const set = jest.spyOn(app.get(CacheService), 'set');
+      try {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          await expect(
+            asOperatorX(() => app.get(RolesRepository).findManyByWorkspace(workspaceY)),
+          ).rejects.toBeInstanceOf(TenantScopeError);
+          await expect(
+            asOperatorX(() => app.get(FeatureFlagsService).getEffective(workspaceY)),
+          ).rejects.toBeInstanceOf(TenantScopeError);
+        }
+        expect(set).not.toHaveBeenCalled();
+      } finally {
+        set.mockRestore();
+      }
+    });
+
+    it('refuses nested writes into them, at any depth, and writes nothing', async () => {
+      const prisma = getPrisma();
+      const user = await prisma.user.findUniqueOrThrow({ where: { email: USERS.opAdminX } });
+      const roleY = await prisma.role.findFirstOrThrow({ where: { workspaceId: workspaceY } });
+      const roleX = await prisma.role.create({
+        data: { name: 'keyed-nested', workspaceId: workspaceX },
+      });
+      const permission = await prisma.permission.findFirstOrThrow({
+        where: { workspaceId: null },
+      });
+      const token = await prisma.emailVerifyToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: randomUUID(),
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+      const invitation = {
+        email: 'nested@example.com',
+        workspaceId: workspaceY,
+        roleId: roleY.id,
+        tokenHash: randomUUID(),
+        expiresAt: new Date(Date.now() + 60_000),
+      };
+      const invitationsBefore = await prisma.invitation.count();
+
+      // The example from the issue, refused since the Invitation joined SCOPED_MODELS.
+      await expect(
+        asOperatorX(() =>
+          scoped.client.user.update({
+            where: { id: user.id },
+            data: { invitationsSent: { create: invitation } },
+          }),
+        ),
+      ).rejects.toBeInstanceOf(TenantScopeError);
+      // The same write one level down, through two models with no tenant column.
+      await expect(
+        asOperatorX(() =>
+          scoped.client.emailVerifyToken.update({
+            where: { id: token.id },
+            data: { user: { update: { invitationsSent: { create: invitation } } } },
+          }),
+        ),
+      ).rejects.toBeInstanceOf(TenantScopeError);
+      await expect(
+        asOperatorX(() =>
+          scoped.client.role.update({
+            where: { id: roleX.id },
+            data: { permissions: { create: { permissionId: permission.id } } },
+          }),
+        ),
+      ).rejects.toBeInstanceOf(TenantScopeError);
+
+      expect(await prisma.invitation.count()).toBe(invitationsBefore);
+      expect(await prisma.rolePermission.count({ where: { roleId: roleX.id } })).toBe(0);
     });
   });
 

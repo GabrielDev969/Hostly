@@ -18,6 +18,8 @@ import { FeatureFlagsService } from '../src/modules/feature-flags/services/featu
 import { PrismaService } from '../src/shared/database/prisma.service';
 import { ScopedPrismaService } from '../src/shared/tenancy/scoped-prisma.service';
 import { CacheService } from '../src/shared/cache/cache.service';
+import { TenantContext } from '../src/shared/tenancy/tenant-context';
+import type { TenantScope } from '../src/shared/tenancy/tenant-scope';
 import { ADMIN_WORKSPACE_SLUG, SUPER_ADMIN_ROLE } from '../src/modules/rbac/constants/system';
 import { PERMISSIONS } from '../src/modules/rbac/constants/permissions';
 
@@ -33,6 +35,7 @@ describe('@Cacheable over Redis (integration)', () => {
   let featureFlags: FeatureFlagsService;
   let userId: string;
   let workspaceId: string;
+  let scope: TenantScope;
 
   beforeAll(async () => {
     await startTestDatabase();
@@ -44,9 +47,10 @@ describe('@Cacheable over Redis (integration)', () => {
     workspaces = new PrismaWorkspacesRepository(prisma, cacheService);
     // The two cached lookups read through the raw client; the scoped one is never reached here.
     members = new PrismaWorkspaceMembersRepository(prisma, {} as ScopedPrismaService, cacheService);
-    roles = new PrismaRolesRepository(prisma, cacheService);
-    permissions = new PrismaPermissionsRepository(prisma, cacheService);
-    featureFlags = new FeatureFlagsService(new PrismaFeatureFlagsRepository(prisma), cacheService);
+    const scoped = new ScopedPrismaService(prisma);
+    roles = new PrismaRolesRepository(prisma, scoped, cacheService);
+    permissions = new PrismaPermissionsRepository(scoped, cacheService);
+    featureFlags = new FeatureFlagsService(new PrismaFeatureFlagsRepository(scoped), cacheService);
   });
 
   afterAll(async () => {
@@ -85,7 +89,19 @@ describe('@Cacheable over Redis (integration)', () => {
       ],
     });
     workspaceId = result.workspace.id;
+    scope = {
+      organizationId: result.workspace.organizationId,
+      workspaceId,
+      clientId: null,
+      advertiserId: null,
+    };
   });
+
+  // Roles, permissions and feature flags read through the scoped client, as behind the WorkspaceGuard.
+  const inWorkspace =
+    <T>(read: () => Promise<T>) =>
+    () =>
+      TenantContext.runWithScope(scope, read);
 
   // Reads twice with a direct row change in between: the stale second read proves it came from the cache.
   async function readTwice<T>(read: () => Promise<T>, change: () => Promise<unknown>) {
@@ -185,7 +201,7 @@ describe('@Cacheable over Redis (integration)', () => {
 
   it('roles.findManyByWorkspace', async () => {
     const { first, second } = await readTwice(
-      () => roles.findManyByWorkspace(workspaceId),
+      inWorkspace(() => roles.findManyByWorkspace(workspaceId)),
       () =>
         getPrisma().role.updateMany({ where: { workspaceId }, data: { description: 'Changed' } }),
     );
@@ -199,7 +215,7 @@ describe('@Cacheable over Redis (integration)', () => {
 
   it('permissions.findAll', async () => {
     const { first, second } = await readTwice(
-      () => permissions.findAll(),
+      inWorkspace(() => permissions.findAll()),
       () => getPrisma().permission.updateMany({ data: { description: 'Changed' } }),
     );
     expect(first.length).toBeGreaterThan(0);
@@ -208,7 +224,7 @@ describe('@Cacheable over Redis (integration)', () => {
 
   it('featureFlags.getEffective', async () => {
     const { first, second } = await readTwice(
-      () => featureFlags.getEffective(workspaceId),
+      inWorkspace(() => featureFlags.getEffective(workspaceId)),
       () =>
         getPrisma().workspaceFeatureFlag.create({
           data: { workspaceId, key: 'billing', enabled: false },

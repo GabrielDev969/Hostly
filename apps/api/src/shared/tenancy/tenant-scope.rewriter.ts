@@ -1,6 +1,11 @@
 import { ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { SCOPED_MODELS, type ScopedModel, type Where } from './scoped-models';
+import {
+  SCOPED_MODELS,
+  WORKSPACE_KEYED_MODELS,
+  type ScopedModel,
+  type Where,
+} from './scoped-models';
 import type { TenantScope } from './tenant-scope';
 
 type Args = Record<string, unknown>;
@@ -49,6 +54,7 @@ const CREATE_OPERATIONS = new Set(['create', 'createMany', 'createManyAndReturn'
 const UPDATE_OPERATIONS = new Set(['update', 'updateMany', 'updateManyAndReturn']);
 const DELETE_OPERATIONS = new Set(['delete', 'deleteMany']);
 const ROOT_WRITE_OPERATIONS = new Set([...UPDATE_OPERATIONS, ...DELETE_OPERATIONS, 'upsert']);
+const WRITE_OPERATIONS = new Set([...CREATE_OPERATIONS, ...ROOT_WRITE_OPERATIONS]);
 // Foreign keys that place a row of any model, scoped or not, in a tenant.
 const TENANT_KEYS: Record<string, (scope: TenantScope) => string> = {
   workspaceId: (scope) => scope.workspaceId,
@@ -71,17 +77,43 @@ const and = (where: unknown, extra: Where): Where => {
 const scalarValue = (value: unknown): unknown =>
   isObject(value) && 'set' in value ? value.set : value;
 
+const isTenantModel = (model: string): boolean =>
+  Boolean(SCOPED_MODELS[model] ?? WORKSPACE_KEYED_MODELS[model]);
+
+const asList = (value: unknown): unknown[] => (Array.isArray(value) ? value : [value]);
+
+// Data payloads a nested write hands to the related model, through every Prisma nested operator.
+// `update` takes either the data itself or { where, data }, so both are returned.
+const nestedData = (write: unknown): Args[] => {
+  if (!isObject(write)) return [];
+  const payloads: unknown[] = [];
+  for (const [operator, value] of Object.entries(write)) {
+    for (const item of asList(value)) {
+      if (!isObject(item)) continue;
+      if (operator === 'create') payloads.push(item);
+      else if (operator === 'createMany') payloads.push(...asList(item.data));
+      else if (operator === 'connectOrCreate') payloads.push(item.create);
+      else if (operator === 'update' || operator === 'updateMany') payloads.push(item, item.data);
+      else if (operator === 'upsert') payloads.push(item.create, item.update);
+    }
+  }
+  return payloads.filter(isObject);
+};
+
 // Rewrites Prisma query args so they can only reach rows inside the current tenant scope.
 // Scoped models get the scope filter on every read and write, list relations into them are
 // filtered wherever they appear, and shapes that cannot be filtered (to-one includes, nested
-// writes, `_count: true`) are rejected instead of silently leaking.
+// writes, `_count: true`) are rejected instead of silently leaking. Workspace-keyed models get
+// their own queries pinned to the scope's workspace and only operators write them.
 export class TenantScopeRewriter {
   constructor(private readonly scope: TenantScope | null) {}
 
   rewrite(model: string, operation: string, args: Args): Args {
     const scoped = SCOPED_MODELS[model];
-    if (scoped) this.requireScope(model);
+    const keyed = WORKSPACE_KEYED_MODELS[model];
+    if (scoped || keyed) this.requireScope(model);
     if (scoped?.root && ROOT_WRITE_OPERATIONS.has(operation)) this.assertOperatorScope(model);
+    if (keyed && WRITE_OPERATIONS.has(operation)) this.assertOperatorScope(model);
 
     if (DELETE_OPERATIONS.has(operation)) this.assertNoScopedCascade(model);
 
@@ -89,6 +121,11 @@ export class TenantScopeRewriter {
     if (out.where !== undefined) out.where = this.where(model, out.where);
     if (scoped && WHERE_OPERATIONS.has(operation)) {
       out.where = and(out.where, this.scopeWhere(model, scoped));
+    }
+    if (keyed && WHERE_OPERATIONS.has(operation)) {
+      const globalsReadable = Boolean(keyed.globalRows) && !WRITE_OPERATIONS.has(operation);
+      this.assertOwnWorkspace(model, out.where, globalsReadable);
+      out.where = and(out.where, this.workspaceWhere(model, globalsReadable));
     }
     if (out.include !== undefined) out.include = this.selection(model, out.include);
     if (out.select !== undefined) out.select = this.selection(model, out.select);
@@ -145,11 +182,41 @@ export class TenantScopeRewriter {
     return keys;
   }
 
-  // Scoped models are already filtered; on the others, a write that sets a tenant key must also
+  // Scoped and workspace-keyed models are already filtered; on the others, a write that sets a tenant key must also
   // start from a row of the own tenant, or it would pull another tenant's row in.
   private pinTenantKeys(model: string, where: unknown, keys: Where): unknown {
-    if (SCOPED_MODELS[model] || Object.keys(keys).length === 0) return where;
+    if (isTenantModel(model) || Object.keys(keys).length === 0) return where;
     return and(where, keys);
+  }
+
+  private workspaceWhere(model: string, globalsReadable: boolean): Where {
+    const { workspaceId } = this.requireScope(model);
+    return globalsReadable ? { OR: [{ workspaceId: null }, { workspaceId }] } : { workspaceId };
+  }
+
+  // Naming another workspace would only come back empty, and @Cacheable would keep that empty
+  // result for the other workspace; refuse it so the caller's mistake surfaces instead.
+  private assertOwnWorkspace(model: string, where: unknown, globalsReadable: boolean): void {
+    if (Array.isArray(where)) {
+      for (const item of where) this.assertOwnWorkspace(model, item, globalsReadable);
+      return;
+    }
+    if (!isObject(where)) return;
+    const own = this.requireScope(model).workspaceId;
+    const check = (value: unknown): void => {
+      const named = isObject(value) && Object.keys(value).length === 1 ? value.equals : value;
+      if (value === undefined || named === own || (named === null && globalsReadable)) return;
+      throw new TenantScopeError(`${model} query names a workspace other than the scope's`);
+    };
+    for (const [key, value] of Object.entries(where)) {
+      if (key === 'AND' || key === 'OR' || key === 'NOT') {
+        this.assertOwnWorkspace(model, value, globalsReadable);
+      } else if (key === 'workspaceId') {
+        check(value);
+      } else if (key.split('_').includes('workspaceId') && isObject(value)) {
+        check(value.workspaceId);
+      }
+    }
   }
 
   private scopeWhere(model: string, config: ScopedModel): Where {
@@ -329,22 +396,28 @@ export class TenantScopeRewriter {
     }
   }
 
+  // Walks every level, so a chain of unscoped models cannot carry a write into a tenant model.
   private assertNoNestedWrites(model: string, data: Args): void {
     const relations = this.relations(model);
     for (const [key, value] of Object.entries(data)) {
       const relation = relations.get(key);
       if (!relation || value === undefined) continue;
-      if (SCOPED_MODELS[model] || SCOPED_MODELS[relation.target]) {
+      if (isTenantModel(model) || isTenantModel(relation.target)) {
         throw new TenantScopeError(
           `Nested write ${model}.${key} bypasses the tenant scope; write scalar ids or use the ${relation.target} delegate`,
         );
       }
+      for (const nested of nestedData(value)) this.assertNoNestedWrites(relation.target, nested);
     }
   }
 
   private createData(model: string, data: unknown): unknown {
     if (!isObject(data)) return data;
     this.assertNoNestedWrites(model, data);
+    // tenantKeys already refused another workspace (or null); a missing one is the scope's.
+    if (WORKSPACE_KEYED_MODELS[model] && data.workspaceId === undefined) {
+      return { ...data, workspaceId: this.requireScope(model).workspaceId };
+    }
     const scoped = SCOPED_MODELS[model];
     if (!scoped) return data;
 
