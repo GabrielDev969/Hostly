@@ -7,3 +7,12 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
+
+  # Só as atualizações de segurança do npm (#114): o limite 0 desliga os PRs de versão, não os de segurança.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: fix
