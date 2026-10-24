@@ -265,16 +265,15 @@ describe('Tenant scope (e2e)', () => {
     });
 
     it('keeps billing switched off', async () => {
-      // GET /workspaces/features is shadowed by GET /workspaces/:workspaceId (inherited route order), so
-      // the effective flag is read from the service the endpoint delegates to.
-      const { FeatureFlagsService } =
-        require('../src/modules/feature-flags/services/feature-flags.service') as typeof import('../src/modules/feature-flags/services/feature-flags.service');
-      // The service reads through the scoped client, as it does behind the WorkspaceGuard.
-      expect(
-        await TenantContext.runWithScope(scopeOf({}), () =>
-          app.get(FeatureFlagsService).isEnabled(workspaceX, 'billing'),
-        ),
-      ).toBe(false);
+      // Operator, client and advertiser all hold workspace:read, so all of them read the effective flags.
+      for (const user of ['opAdminX', 'clientAdminA', 'advertiserA1'] as const) {
+        const res = await get(`/api/v1/workspaces/${workspaceX}/features`, user, workspaceX).expect(
+          200,
+        );
+        expect(res.body).toContainEqual(
+          expect.objectContaining({ key: 'billing', enabled: false, overridden: false }),
+        );
+      }
     });
   });
 

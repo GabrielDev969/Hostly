@@ -111,6 +111,21 @@ describe('Workspaces flow (e2e)', () => {
       .expect(403);
   });
 
+  // The guard reads x-workspace-id before :workspaceId, so a static segment would reach the handler.
+  it('GET /workspaces/features no longer answers the workspace', async () => {
+    const { accessToken } = await registerAndLogin();
+    const workspaceId = await provisionOperator(app, 'jane@example.com');
+
+    const res = await request(server)
+      .get('/api/v1/workspaces/features')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-workspace-id', workspaceId)
+      .expect(400);
+
+    expect(res.body).not.toHaveProperty('slug');
+    expect(res.body).not.toHaveProperty('ownerId');
+  });
+
   it('DELETE /workspaces/:id is forbidden to operator_admin (no workspace:delete)', async () => {
     const { accessToken } = await registerAndLogin();
     const workspaceId = await provisionOperator(app, 'jane@example.com');

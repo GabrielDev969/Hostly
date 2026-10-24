@@ -10,6 +10,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -76,6 +77,8 @@ export class WorkspacesController {
     return this.listWorkspaces.execute(user.id);
   }
 
+  // ParseUUIDPipe turns a static segment such as `features` into a 400 instead of answering the workspace
+  // from the x-workspace-id header.
   @Get(':workspaceId')
   @UseGuards(WorkspaceGuard, PermissionsGuard)
   @RequirePermissions(PERMISSIONS.WORKSPACE.READ)
@@ -85,7 +88,10 @@ export class WorkspacesController {
   @ApiAuthErrors()
   @ApiNotFoundError('Workspace')
   @ApiServerError()
-  async findOne(@CurrentWorkspace() workspace: WorkspaceContext): Promise<WorkspaceResponseDto> {
+  async findOne(
+    @Param('workspaceId', ParseUUIDPipe) _workspaceId: string,
+    @CurrentWorkspace() workspace: WorkspaceContext,
+  ): Promise<WorkspaceResponseDto> {
     return this.getWorkspace.execute(workspace.id);
   }
 

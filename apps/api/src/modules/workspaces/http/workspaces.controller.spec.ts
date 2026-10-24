@@ -86,7 +86,7 @@ describe('WorkspacesController', () => {
   it('findOne resolves the workspace from the request context', async () => {
     getWorkspace.execute.mockResolvedValue(workspaceDto);
 
-    const result = await controller.findOne(workspace);
+    const result = await controller.findOne(workspace.id, workspace);
 
     expect(getWorkspace.execute).toHaveBeenCalledWith('w1');
     expect(result).toBe(workspaceDto);
