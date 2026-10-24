@@ -167,7 +167,7 @@ describe('PrismaWorkspacesRepository', () => {
       });
 
       expect(tx.workspaceMember.create).toHaveBeenCalledWith({
-        data: { userId: 'u1', workspaceId: 'w1', roleId: 'roleOwner' },
+        data: { userId: 'u1', workspaceId: 'w1', organizationId: 'org1', roleId: 'roleOwner' },
       });
 
       expect(result.workspace.id).toBe('w1');

@@ -3,6 +3,7 @@ import { WorkspaceMember } from '../entities/workspace-member.entity';
 export interface CreateWorkspaceMemberData {
   userId: string;
   workspaceId: string;
+  organizationId: string;
   roleId: string;
   clientId?: string | null;
   advertiserId?: string | null;
@@ -12,6 +13,7 @@ export interface CreateFromInvitationData {
   invitationId: string;
   userId: string;
   workspaceId: string;
+  organizationId: string;
   roleId: string;
   clientId: string | null;
   now: Date;

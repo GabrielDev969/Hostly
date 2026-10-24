@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import {
@@ -534,6 +535,132 @@ describe('Clients and sites (e2e)', () => {
       } finally {
         await deleting.rollback();
       }
+    });
+
+    // Accepting locks the client, closes the invitation and inserts the membership, whose foreign
+    // keys reach the same client and workspace rows; the delete locks the client first too.
+    describe('against an invitation being accepted', () => {
+      let id: string;
+      let invitationId: string;
+      let invitationToken: string;
+      let inviteeId: string;
+      let inviteeToken: string;
+
+      const accept = () =>
+        request(server)
+          .post('/api/v1/invitations/accept')
+          .set('Authorization', `Bearer ${inviteeToken}`)
+          .send({ token: invitationToken });
+      const state = async () => {
+        const prisma = getPrisma();
+        return {
+          deleted: (await prisma.client.findUniqueOrThrow({ where: { id } })).deletedAt !== null,
+          accepted:
+            (await prisma.invitation.findUniqueOrThrow({ where: { id: invitationId } }))
+              .acceptedAt !== null,
+          members: await prisma.workspaceMember.findMany({
+            where: { clientId: id },
+            select: { userId: true, organizationId: true },
+          }),
+        };
+      };
+
+      beforeEach(async () => {
+        id = await createClient(`Shopping ${randomUUID()}`);
+        const email = `invitee-${randomUUID()}@example.com`;
+        const invitation = await as('opAdminX')
+          .post('/api/v1/invitations', {
+            email,
+            roleId: await roleId('client_editor'),
+            clientId: id,
+          })
+          .expect(201);
+        invitationId = invitation.body.id as string;
+        invitationToken = emailDispatcher.tokenFor(email);
+        await registerAndVerify(server, emailDispatcher, {
+          email,
+          name: email,
+          password: PASSWORD,
+        });
+        inviteeId = (await getPrisma().user.findUniqueOrThrow({ where: { email } })).id;
+        inviteeToken = await login(email);
+      });
+
+      it('makes the delete wait for the accept, then counts the membership', async () => {
+        const now = new Date();
+        // What accepting does, membership included.
+        const accepting = await holdTransaction(async (tx) => {
+          await tx.client.updateMany({
+            where: { id, deletedAt: null },
+            data: { updatedAt: now },
+          });
+          await tx.invitation.updateMany({
+            where: { id: invitationId, acceptedAt: null },
+            data: { acceptedAt: now },
+          });
+          await tx.workspaceMember.create({
+            data: {
+              userId: inviteeId,
+              workspaceId: workspaceX,
+              organizationId: organizationX,
+              roleId: await roleId('client_editor'),
+              clientId: id,
+            },
+          });
+        });
+        try {
+          const deleting = inFlight(as('opAdminX').delete(`/api/v1/clients/${id}`));
+          await waitUntilBlockedBy(accepting.pid);
+          expect(deleting.answered()).toBe(false);
+
+          await accepting.commit();
+          const res = await deleting.response;
+          expect(res.status).toBe(409);
+          expect(res.body.message).toBe('Client still has members; remove them first');
+          expect(await state()).toEqual({
+            deleted: false,
+            accepted: true,
+            members: [{ userId: inviteeId, organizationId: organizationX }],
+          });
+        } finally {
+          await accepting.rollback();
+        }
+      });
+
+      it('makes the accept wait for the delete, then refuses it', async () => {
+        const deleting = await markDeleted(id);
+        try {
+          const accepting = inFlight(accept());
+          await waitUntilBlockedBy(deleting.pid);
+          expect(accepting.answered()).toBe(false);
+
+          await deleting.commit();
+          const res = await accepting.response;
+          expect(res.status).toBe(409);
+          expect(res.body.message).toBe('The client of this invitation no longer exists');
+          expect(await state()).toEqual({ deleted: true, accepted: false, members: [] });
+        } finally {
+          await deleting.rollback();
+        }
+      });
+
+      it('lets the accept through when the delete rolls back', async () => {
+        const deleting = await markDeleted(id);
+        try {
+          const accepting = inFlight(accept());
+          await waitUntilBlockedBy(deleting.pid);
+
+          await deleting.rollback();
+          expect((await accepting.response).status).toBe(200);
+          expect(await state()).toEqual({
+            deleted: false,
+            accepted: true,
+            members: [{ userId: inviteeId, organizationId: organizationX }],
+          });
+        } finally {
+          await deleting.rollback();
+        }
+      });
     });
   });
 });

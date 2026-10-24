@@ -28,9 +28,13 @@ export const SCOPED_MODELS: Readonly<Partial<Record<string, ScopedModel>>> = {
     advertiserField: null,
     root: true,
   },
+  // organizationId copies the workspace's, enforced by the composite foreign keys to Workspace and Client.
   WorkspaceMember: {
-    organizationWhere: (scope) => ({ workspace: { organizationId: scope.organizationId } }),
-    organizationData: (scope) => ({ workspaceId: scope.workspaceId }),
+    organizationWhere: (scope) => ({ organizationId: scope.organizationId }),
+    organizationData: (scope) => ({
+      workspaceId: scope.workspaceId,
+      organizationId: scope.organizationId,
+    }),
     clientField: 'clientId',
     advertiserField: 'advertiserId',
   },
@@ -68,8 +72,11 @@ export const SCOPED_MODELS: Readonly<Partial<Record<string, ScopedModel>>> = {
     advertiserField: null,
   },
   Invitation: {
-    organizationWhere: (scope) => ({ workspace: { organizationId: scope.organizationId } }),
-    organizationData: (scope) => ({ workspaceId: scope.workspaceId }),
+    organizationWhere: (scope) => ({ organizationId: scope.organizationId }),
+    organizationData: (scope) => ({
+      workspaceId: scope.workspaceId,
+      organizationId: scope.organizationId,
+    }),
     clientField: 'clientId',
     advertiserField: null,
   },

@@ -80,7 +80,12 @@ describe('Admin: invalidate user tokens (e2e)', () => {
       },
     });
     await prisma.workspaceMember.create({
-      data: { userId, workspaceId: adminWs.id, roleId: role.id },
+      data: {
+        userId,
+        workspaceId: adminWs.id,
+        organizationId: adminWs.organizationId,
+        roleId: role.id,
+      },
     });
   }
 

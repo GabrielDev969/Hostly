@@ -36,6 +36,7 @@ export async function provisionSuperAdmin(userId: string): Promise<void> {
     data: {
       userId,
       workspaceId: adminWs.id,
+      organizationId: organization.id,
       roleId: role.id,
     },
   });

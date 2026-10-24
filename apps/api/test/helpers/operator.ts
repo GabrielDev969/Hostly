@@ -37,10 +37,13 @@ export async function addScopedMember(
 ): Promise<void> {
   const prisma = getPrisma();
   const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+  const { organizationId } = await prisma.workspace.findUniqueOrThrow({
+    where: { id: workspaceId },
+  });
   const role = await prisma.role.findUniqueOrThrow({
     where: { workspaceId_name: { workspaceId, name: roleName } },
   });
   await prisma.workspaceMember.create({
-    data: { userId: user.id, workspaceId, roleId: role.id, ...scope },
+    data: { userId: user.id, workspaceId, organizationId, roleId: role.id, ...scope },
   });
 }

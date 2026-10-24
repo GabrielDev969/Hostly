@@ -34,7 +34,8 @@ export class CreateUserUseCase {
     const role = await this.roles.findByIdInWorkspace(input.roleId, input.workspaceId);
     if (!role) throw new NotFoundException('Role not found in this workspace');
     const membership = { clientId: null, advertiserId: null };
-    assertCanGrant(TenantContext.scope, membership);
+    const scope = TenantContext.scope;
+    assertCanGrant(scope, membership);
     assertRoleFitsScope(role, membership);
 
     // 3. Create the user
@@ -49,6 +50,7 @@ export class CreateUserUseCase {
     await this.members.create({
       userId: user.id,
       workspaceId: input.workspaceId,
+      organizationId: scope.organizationId,
       roleId: input.roleId,
     });
 
