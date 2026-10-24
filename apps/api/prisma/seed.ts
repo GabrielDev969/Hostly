@@ -215,7 +215,12 @@ async function seedOperator(adminEmail: string): Promise<void> {
   await prisma.workspaceMember.upsert({
     where: { userId_workspaceId: { userId: admin.id, workspaceId: workspace.id } },
     update: { roleId: ownerRoleId, clientId: null, advertiserId: null },
-    create: { userId: admin.id, workspaceId: workspace.id, roleId: ownerRoleId },
+    create: {
+      userId: admin.id,
+      workspaceId: workspace.id,
+      organizationId: organization.id,
+      roleId: ownerRoleId,
+    },
   });
 
   await seedInternalClient(organization.id);
@@ -294,7 +299,12 @@ async function seedSuperAdmin(allPermissionKeys: string[]): Promise<void> {
       userId_workspaceId: { userId: user.id, workspaceId: workspace.id },
     },
     update: { roleId: role.id },
-    create: { userId: user.id, workspaceId: workspace.id, roleId: role.id },
+    create: {
+      userId: user.id,
+      workspaceId: workspace.id,
+      organizationId: organization.id,
+      roleId: role.id,
+    },
   });
 
   console.log(`✅ Super admin "${env.email}" provisioned`);

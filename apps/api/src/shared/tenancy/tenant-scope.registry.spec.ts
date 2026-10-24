@@ -162,6 +162,32 @@ describe('tenant scope registry', () => {
     expect(loose).toEqual([]);
   });
 
+  // A client belongs to one organization: the foreign key carries organizationId, and a row placed
+  // by its workspace keys that workspace by the organization too, so no client (scoped, raw or
+  // system work) can point a row at a client of another organization.
+  it('keys every reference to a client by the organization too', () => {
+    const loose: string[] = [];
+    for (const [name, model] of parseSchemaModels()) {
+      const client = model.relations.find((r) => r.target === 'Client');
+      if (!client) continue;
+      const pinned =
+        client.fields.join() === 'clientId,organizationId' &&
+        client.references.join() === 'id,organizationId';
+      if (!pinned) loose.push(`${name}.clientId`);
+      const workspace = model.relations.find((r) => r.target === 'Workspace');
+      if (
+        workspace &&
+        !(
+          workspace.fields.join() === 'workspaceId,organizationId' &&
+          workspace.references.join() === 'id,organizationId'
+        )
+      ) {
+        loose.push(`${name}.workspaceId`);
+      }
+    }
+    expect(loose).toEqual([]);
+  });
+
   it('scopes clients, sites, robots and invitations by their client column', () => {
     expect(SCOPED_MODELS.Client?.clientField).toBe('id');
     expect(SCOPED_MODELS.Site?.clientField).toBe('clientId');

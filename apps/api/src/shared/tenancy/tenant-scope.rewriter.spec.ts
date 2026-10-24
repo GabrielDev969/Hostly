@@ -12,7 +12,7 @@ const client: TenantScope = { ...operator, clientId: 'client-a' };
 const advertiser: TenantScope = { ...client, advertiserId: 'adv-1' };
 
 const memberScope = (scope: TenantScope) => ({
-  workspace: { organizationId: scope.organizationId },
+  organizationId: scope.organizationId,
   ...(scope.clientId ? { clientId: scope.clientId } : {}),
   ...(scope.advertiserId ? { advertiserId: scope.advertiserId } : {}),
 });
@@ -99,7 +99,7 @@ describe('TenantScopeRewriter', () => {
 
     it('scopes invitations by organization and client', () => {
       expect(new TenantScopeRewriter(client).rewrite('Invitation', 'findMany', {}).where).toEqual({
-        workspace: { organizationId: 'org1' },
+        organizationId: 'org1',
         clientId: 'client-a',
       });
     });
@@ -322,8 +322,20 @@ describe('TenantScopeRewriter', () => {
         ],
       });
       expect(out.data).toEqual([
-        { userId: 'u1', roleId: 'r1', workspaceId: 'w1', clientId: 'client-a' },
-        { userId: 'u2', roleId: 'r1', workspaceId: 'w1', clientId: 'client-a' },
+        {
+          userId: 'u1',
+          roleId: 'r1',
+          workspaceId: 'w1',
+          organizationId: 'org1',
+          clientId: 'client-a',
+        },
+        {
+          userId: 'u2',
+          roleId: 'r1',
+          workspaceId: 'w1',
+          organizationId: 'org1',
+          clientId: 'client-a',
+        },
       ]);
     });
 
@@ -338,6 +350,26 @@ describe('TenantScopeRewriter', () => {
         }),
       ).toThrow(ForbiddenException);
     });
+
+    // The composite foreign keys tie the client to this organization, so the row must carry the scope's.
+    it.each(['WorkspaceMember', 'Invitation'])(
+      "stamps the scope's organization on new %s rows and refuses another one",
+      (model) => {
+        const rewriter = new TenantScopeRewriter(operator);
+        expect(
+          rewriter.rewrite(model, 'create', { data: { roleId: 'r1', clientId: 'client-b' } }).data,
+        ).toMatchObject({ workspaceId: 'w1', organizationId: 'org1', clientId: 'client-b' });
+        expect(() =>
+          rewriter.rewrite(model, 'create', { data: { roleId: 'r1', organizationId: 'org2' } }),
+        ).toThrow(ForbiddenException);
+        expect(() =>
+          rewriter.rewrite(model, 'update', {
+            where: { id: 'x1' },
+            data: { organizationId: { set: 'org2' } },
+          }),
+        ).toThrow(ForbiddenException);
+      },
+    );
 
     it('rejects updates that move a row out of the scope', () => {
       expect(() =>

@@ -58,6 +58,7 @@ export class PrismaWorkspaceMembersRepository extends WorkspaceMembersRepository
           data: {
             userId: data.userId,
             workspaceId: data.workspaceId,
+            organizationId: data.organizationId,
             roleId: data.roleId,
             clientId: data.clientId,
           },

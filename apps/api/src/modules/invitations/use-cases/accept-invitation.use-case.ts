@@ -64,6 +64,7 @@ export class AcceptInvitationUseCase {
       invitationId: invitation.id,
       userId: input.userId,
       workspaceId: invitation.workspaceId,
+      organizationId: invitation.organizationId,
       roleId: invitation.roleId,
       clientId: invitation.clientId,
       now: new Date(),

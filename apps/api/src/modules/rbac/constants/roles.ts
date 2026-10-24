@@ -145,7 +145,10 @@ export function assertRoleFitsScope(
 
 // Only operators grant operator-scoped roles; anyone else grants only inside their own client
 // (and advertisers only inside their own advertiser).
-export function assertCanGrant(grantor: ScopeIds | null, membership: ScopeIds): void {
+export function assertCanGrant(
+  grantor: ScopeIds | null,
+  membership: ScopeIds,
+): asserts grantor is ScopeIds {
   if (!grantor) throw new ForbiddenException('Granting a role requires a tenant scope');
   if (scopeKindOf(grantor) === 'operator') return;
   const sameClient = membership.clientId !== null && membership.clientId === grantor.clientId;

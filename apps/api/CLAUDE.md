@@ -136,6 +136,12 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
     `tenant-scope.registry.spec.ts` falha se uma relação de modelo com `workspaceId` pra modelo de
     `WORKSPACE_KEYED_MODELS` não levar `workspaceId` na chave.
   - O aceite de convite (sem membership) e as rotas de flag do super admin (sem escopo) rodam em `runAsSystem`.
+- `WorkspaceMember` e `Invitation` levam o `organizationId` do workspace, com FK composta `(workspaceId,
+  organizationId)` pro `Workspace(id, organizationId)` e `(clientId, organizationId)` pro `Client(id,
+  organizationId)`, as duas com `onUpdate: Restrict`: nenhum client grava cliente de outra organização (`P2003` → 409,
+  igual pra cliente inexistente). O client com escopo carimba o `organizationId` no create e filtra por ele; o cru
+  (aceite, `POST /users`, `createWithDefaults`, seed) grava o do workspace. O `tenant-scope.registry.spec.ts` falha se
+  uma relação pro `Client` não levar `organizationId` na chave.
 - A recusa de escrita aninhada vale em todo nível (`create`, `createMany`, `connectOrCreate`, `update`, `upsert` e
   `updateMany` aninhados) quando o modelo ou o alvo está em `SCOPED_MODELS` ou `WORKSPACE_KEYED_MODELS`.
 - No `Client`, o `clientField` é o próprio `id`: o usuário de cliente só alcança a linha do cliente dele. `Client`,

@@ -42,6 +42,8 @@ describe('PrismaWorkspaceMembersRepository', () => {
     advertiserId: null,
     joinedAt: new Date('2026-01-01'),
   };
+  // The row as the database returns it; the entity (and so every cached value) leaves organizationId out.
+  const memberRow = { ...baseMember, organizationId: 'org1' };
 
   beforeEach(() => {
     tx = {
@@ -92,14 +94,15 @@ describe('PrismaWorkspaceMembersRepository', () => {
 
   describe('create', () => {
     it('persists and returns mapped entity', async () => {
-      prisma.workspaceMember.create.mockResolvedValue(baseMember);
+      prisma.workspaceMember.create.mockResolvedValue(memberRow);
       const result = await repo.create({
         userId: 'u1',
         workspaceId: 'w1',
+        organizationId: 'org1',
         roleId: 'r1',
       });
       expect(prisma.workspaceMember.create).toHaveBeenCalledWith({
-        data: { userId: 'u1', workspaceId: 'w1', roleId: 'r1' },
+        data: { userId: 'u1', workspaceId: 'w1', organizationId: 'org1', roleId: 'r1' },
       });
       expect(result).toEqual(baseMember);
     });
@@ -111,13 +114,14 @@ describe('PrismaWorkspaceMembersRepository', () => {
       invitationId: 'i1',
       userId: 'u1',
       workspaceId: 'w1',
+      organizationId: 'org1',
       roleId: 'r1',
       clientId: 'client-a',
       now,
     };
 
     it('locks the live client, closes the pending invitation and creates the membership', async () => {
-      tx.workspaceMember.create.mockResolvedValue({ ...baseMember, clientId: 'client-a' });
+      tx.workspaceMember.create.mockResolvedValue({ ...memberRow, clientId: 'client-a' });
 
       const result = await repo.createFromInvitation(data);
 
@@ -134,7 +138,13 @@ describe('PrismaWorkspaceMembersRepository', () => {
         data: { acceptedAt: now },
       });
       expect(tx.workspaceMember.create).toHaveBeenCalledWith({
-        data: { userId: 'u1', workspaceId: 'w1', roleId: 'r1', clientId: 'client-a' },
+        data: {
+          userId: 'u1',
+          workspaceId: 'w1',
+          organizationId: 'org1',
+          roleId: 'r1',
+          clientId: 'client-a',
+        },
       });
     });
 
@@ -177,7 +187,7 @@ describe('PrismaWorkspaceMembersRepository', () => {
   describe('findByUserAndWorkspace', () => {
     it('returns mapped membership with role + permission keys', async () => {
       prisma.workspaceMember.findUnique.mockResolvedValue({
-        ...baseMember,
+        ...memberRow,
         workspace: { organizationId: 'org1' },
         role: {
           id: 'r1',

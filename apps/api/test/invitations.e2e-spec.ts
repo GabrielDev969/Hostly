@@ -341,6 +341,7 @@ describe('Invitations flow (e2e)', () => {
   describe('racing a role delete', () => {
     let inviterToken: string;
     let workspaceId: string;
+    let organizationId: string;
     let roleId: string;
     let invitationId: string;
     let invitationToken: string;
@@ -385,6 +386,9 @@ describe('Invitations flow (e2e)', () => {
     beforeEach(async () => {
       inviterToken = await registerAndLogin('inviter@example.com', 'Inviter');
       workspaceId = await provisionOperator(app, 'inviter@example.com');
+      ({ organizationId } = await getPrisma().workspace.findUniqueOrThrow({
+        where: { id: workspaceId },
+      }));
       const role = await asInviter(request(server).post('/api/v1/rbac/roles'))
         .send({ name: 'race-role', permissionKeys: ['workspace:read'] })
         .expect(201);
@@ -407,7 +411,9 @@ describe('Invitations flow (e2e)', () => {
         await waitUntilBlockedBy(accepting.pid);
         // With the role locked first (a plain cascade), this insert would deadlock with the delete.
         await accepting.run((tx) =>
-          tx.workspaceMember.create({ data: { userId: invitee.id, workspaceId, roleId } }),
+          tx.workspaceMember.create({
+            data: { userId: invitee.id, workspaceId, organizationId, roleId },
+          }),
         );
         expect(deleting.answered()).toBe(false);
 
@@ -469,6 +475,7 @@ describe('Invitations flow (e2e)', () => {
           data: {
             email: 'late@example.com',
             workspaceId,
+            organizationId,
             roleId,
             invitedById: inviter.id,
             tokenHash: randomUUID(),

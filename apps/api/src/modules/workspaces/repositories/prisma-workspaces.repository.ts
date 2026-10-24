@@ -85,6 +85,7 @@ export class PrismaWorkspacesRepository extends WorkspacesRepository {
         data: {
           userId: data.ownerId,
           workspaceId: workspace.id,
+          organizationId: organization.id,
           roleId: ownerRoleId,
         },
       });

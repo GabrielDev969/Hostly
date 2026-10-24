@@ -127,6 +127,7 @@ describe('SendInvitationUseCase', () => {
     invitations.create.mockImplementation((data) =>
       Promise.resolve({
         id: 'i1',
+        organizationId: 'o1',
         ...data,
         acceptedAt: null,
         createdAt: new Date(),
@@ -225,7 +226,13 @@ describe('SendInvitationUseCase', () => {
       users.findByEmail.mockResolvedValue(null);
       invitations.findPendingByEmailAndWorkspace.mockResolvedValue(null);
       invitations.create.mockImplementation((data) =>
-        Promise.resolve({ id: 'i1', ...data, acceptedAt: null, createdAt: new Date() }),
+        Promise.resolve({
+          id: 'i1',
+          organizationId: 'o1',
+          ...data,
+          acceptedAt: null,
+          createdAt: new Date(),
+        }),
       );
     });
 

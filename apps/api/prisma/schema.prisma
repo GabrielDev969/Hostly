@@ -128,58 +128,68 @@ model Workspace {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
+  // Target of the composite foreign keys of WorkspaceMember and Invitation.
+  @@unique([id, organizationId])
   @@index([ownerId])
   @@index([organizationId])
   @@index([deletedAt])
 }
 
 model WorkspaceMember {
-  id           String  @id @default(uuid())
-  userId       String
-  workspaceId  String
-  roleId       String
+  id             String  @id @default(uuid())
+  userId         String
+  workspaceId    String
+  // The workspace's organization, so the client foreign key can be keyed by it.
+  organizationId String
+  roleId         String
   // Tenant scope of the membership: null/null = operator; clientId = client user; both = advertiser.
   // The advertiserId foreign key arrives with the Advertiser table.
-  clientId     String?
-  advertiserId String?
+  clientId       String?
+  advertiserId   String?
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId, organizationId], references: [id, organizationId], onDelete: Cascade, onUpdate: Restrict)
   // Keyed by the workspace too, so a membership can only hold a role of its own workspace.
   role      Role      @relation(fields: [roleId, workspaceId], references: [id, workspaceId], onDelete: Restrict, onUpdate: Restrict)
-  client    Client?   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  // Keyed by the organization too, so a membership can only hold a client of its own organization.
+  client    Client?   @relation(fields: [clientId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
 
   joinedAt DateTime @default(now())
 
   @@unique([userId, workspaceId])
   @@index([workspaceId])
+  @@index([organizationId])
   @@index([roleId, workspaceId])
   @@index([clientId])
   @@index([advertiserId])
 }
 
 model Invitation {
-  id          String    @id @default(uuid())
-  email       String
-  workspaceId String
-  roleId      String
-  invitedById String
+  id             String    @id @default(uuid())
+  email          String
+  workspaceId    String
+  // The workspace's organization, so the client foreign key can be keyed by it.
+  organizationId String
+  roleId         String
+  invitedById    String
   // Client the accepted membership belongs to; null = operator membership.
-  clientId    String?
-  tokenHash   String    @unique
-  expiresAt   DateTime
-  acceptedAt  DateTime?
+  clientId       String?
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId, organizationId], references: [id, organizationId], onDelete: Cascade, onUpdate: Restrict)
   // NoAction: deleting a role deletes its invitations first (PrismaRolesRepository.delete), in the
   // order accepting locks them, so a race refuses the delete instead of deadlocking.
   role      Role      @relation(fields: [roleId, workspaceId], references: [id, workspaceId], onDelete: NoAction, onUpdate: Restrict)
   invitedBy User      @relation("InvitedBy", fields: [invitedById], references: [id])
-  client    Client?   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  // Keyed by the organization too, so an invitation can only carry a client of its own organization.
+  client    Client?   @relation(fields: [clientId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: Restrict)
 
   createdAt DateTime @default(now())
 
   @@index([email])
+  @@index([organizationId])
   @@index([clientId])
   @@index([roleId, workspaceId])
 }
@@ -209,7 +219,8 @@ model Client {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  // Target of Site's composite foreign key, so a site can never point to another organization's client.
+  // Target of the composite foreign keys of Site, TelemetrySnapshot, WorkspaceMember and Invitation, so
+  // none of them can point to another organization's client.
   @@unique([id, organizationId])
   @@index([organizationId])
   @@index([deletedAt])

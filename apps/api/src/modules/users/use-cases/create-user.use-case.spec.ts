@@ -87,9 +87,11 @@ describe('CreateUserUseCase', () => {
       CryptoUtil.verifyPassword(createArg.passwordHash!, 'StrongPass@123'),
     ).resolves.toBe(true);
 
+    // The organization comes from the scope; the composite foreign key refuses it unless it is the workspace's.
     expect(members.create).toHaveBeenCalledWith({
       userId: 'u-new',
       workspaceId: 'w1',
+      organizationId: 'org1',
       roleId: 'r1',
     });
     expect(result.id).toBe('u-new');

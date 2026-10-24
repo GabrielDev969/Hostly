@@ -294,7 +294,12 @@ describe('Tenant scope (e2e)', () => {
         data: { name: 'Auditor', workspaceId: adminWorkspace.id },
       });
       await prisma.workspaceMember.create({
-        data: { userId: user.id, workspaceId: adminWorkspace.id, roleId: auditorRole.id },
+        data: {
+          userId: user.id,
+          workspaceId: adminWorkspace.id,
+          organizationId: adminWorkspace.organizationId,
+          roleId: auditorRole.id,
+        },
       });
       const token = await login(email);
 
@@ -787,6 +792,7 @@ describe('Tenant scope (e2e)', () => {
       const invitation = {
         email: 'nested@example.com',
         workspaceId: workspaceY,
+        organizationId: organizationY,
         roleId: roleY.id,
         tokenHash: randomUUID(),
         expiresAt: new Date(Date.now() + 60_000),
@@ -836,6 +842,7 @@ describe('Tenant scope (e2e)', () => {
       const invitation = (roleId: string) => ({
         email: 'foreign-role@example.com',
         workspaceId: workspaceX,
+        organizationId: organizationX,
         roleId,
         invitedById: inviter.id,
         tokenHash: randomUUID(),
@@ -876,6 +883,84 @@ describe('Tenant scope (e2e)', () => {
       expect(messages[0]).toEqual(messages[1]);
       expect(messages.flat().join()).not.toContain(roleY.id);
       expect(messages.flat().join()).not.toContain(workspaceY);
+      expect(await snapshot()).toEqual(before);
+    });
+
+    // The writes from #106: membership and invitation carry the workspace's organization, and the
+    // client foreign key carries it too, so no client of Y lands in X, whatever client writes it.
+    it("never lets a membership or an invitation hold another organization's client", async () => {
+      const prisma = getPrisma();
+      const inviter = await prisma.user.findUniqueOrThrow({ where: { email: USERS.opAdminX } });
+      const member = await prisma.workspaceMember.findFirstOrThrow({
+        where: { workspaceId: workspaceX, user: { email: USERS.opStaffX } },
+      });
+      const role = await prisma.role.findUniqueOrThrow({
+        where: { workspaceId_name: { workspaceId: workspaceX, name: 'client_admin' } },
+      });
+      const clientY = await prisma.client.findFirstOrThrow({
+        where: { organizationId: organizationY },
+      });
+      const invitation = (clientId: string) => ({
+        email: 'foreign-client@example.com',
+        workspaceId: workspaceX,
+        organizationId: organizationX,
+        roleId: role.id,
+        invitedById: inviter.id,
+        clientId,
+        tokenHash: randomUUID(),
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      const snapshot = async () => ({
+        member: await prisma.workspaceMember.findUniqueOrThrow({ where: { id: member.id } }),
+        invitations: await prisma.invitation.count(),
+        holdingClientY:
+          (await prisma.workspaceMember.count({ where: { clientId: clientY.id } })) +
+          (await prisma.invitation.count({ where: { clientId: clientY.id } })),
+      });
+      const before = await snapshot();
+      const refusals = (writes: Promise<unknown>[]) =>
+        Promise.all(
+          writes.map((write) =>
+            write.then(
+              () => null,
+              (error: unknown) => error,
+            ),
+          ),
+        );
+
+      const messages: string[][] = [];
+      for (const clientId of [clientY.id, randomUUID()]) {
+        const refused = await refusals([
+          asOperatorX(() =>
+            scoped.client.workspaceMember.update({ where: { id: member.id }, data: { clientId } }),
+          ),
+          asOperatorX(() => scoped.client.invitation.create({ data: invitation(clientId) })),
+          // The raw client, which accepting an invitation and POST /users write through.
+          prisma.workspaceMember.update({ where: { id: member.id }, data: { clientId } }),
+          prisma.invitation.create({ data: invitation(clientId) }),
+        ]);
+        for (const error of refused) {
+          expect(error).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+          expect(error).toMatchObject({ code: 'P2003' });
+        }
+        messages.push(refused.map((error) => (error as Error).message));
+      }
+
+      // Nor can a row claim Y as its organization while it stays in X's workspace.
+      const [moved] = await refusals([
+        prisma.workspaceMember.update({
+          where: { id: member.id },
+          data: { organizationId: organizationY },
+        }),
+      ]);
+      expect(moved).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+      expect(moved).toMatchObject({ code: 'P2003' });
+
+      // A client of Y fails exactly like a client that exists nowhere: nothing tells Y's clients apart.
+      expect(messages[0]).toEqual(messages[1]);
+      const all = [...messages.flat(), (moved as Error).message].join();
+      expect(all).not.toContain(clientY.id);
+      expect(all).not.toContain(organizationY);
       expect(await snapshot()).toEqual(before);
     });
   });
@@ -919,6 +1004,7 @@ describe('Tenant scope (e2e)', () => {
               data: {
                 userId: outsider.id,
                 workspaceId: workspaceX,
+                organizationId: organizationX,
                 roleId: role.id,
                 clientId: CLIENT_B,
               },
