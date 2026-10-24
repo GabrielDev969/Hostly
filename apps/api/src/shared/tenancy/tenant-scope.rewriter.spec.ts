@@ -665,6 +665,30 @@ describe('TenantScopeRewriter', () => {
       });
     });
 
+    it('takes isNot over rows outside the scope, so a foreign related row never matches', () => {
+      const rewriter = new TenantScopeRewriter(operator);
+      expect(
+        rewriter.rewrite('RolePermission', 'findMany', {
+          where: { role: { isNot: { workspaceId: 'w1' } } },
+        }).where,
+      ).toEqual({
+        role: { isNot: { OR: [{ workspaceId: 'w1' }, { NOT: { workspaceId: 'w1' } }] } },
+      });
+      expect(
+        new TenantScopeRewriter(client).rewrite('Site', 'findMany', {
+          where: { client: { isNot: { name: 'x' } } },
+        }).where,
+      ).toEqual({
+        client: {
+          isNot: { OR: [{ name: 'x' }, { NOT: { organizationId: 'org1', id: 'client-a' } }] },
+        },
+        AND: [{ organizationId: 'org1', clientId: 'client-a' }],
+      });
+      expect(
+        rewriter.rewrite('RolePermission', 'findMany', { where: { role: { isNot: null } } }).where,
+      ).toEqual({ role: { isNot: null } });
+    });
+
     it.each([
       ['connect', { connect: { id: 'm1' } }],
       ['connect, list', { connect: [{ id: 'm1' }, { id: 'm2' }] }],

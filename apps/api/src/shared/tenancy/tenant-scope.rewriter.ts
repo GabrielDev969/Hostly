@@ -275,20 +275,26 @@ export class TenantScopeRewriter {
       return pinned && inner !== null ? and(rewritten, pin()) : rewritten;
     };
 
+    // A negated filter with the pin inside it would hold for every row outside the scope, so the
+    // negation is taken over "matches, or is outside the scope" instead.
+    const negated = (inner: unknown): unknown =>
+      pinned && inner !== null
+        ? { OR: [this.where(relation.target, inner), { NOT: pin() }] }
+        : this.where(relation.target, inner);
+
     if (relation.isList) {
       const out: Args = {};
       for (const [op, inner] of Object.entries(filter)) {
         // `every` must ignore rows outside the scope instead of failing because of them.
-        out[op] =
-          op === 'every' && pinned
-            ? { OR: [this.where(relation.target, inner), { NOT: pin() }] }
-            : inScope(inner);
+        out[op] = op === 'every' ? negated(inner) : inScope(inner);
       }
       return out;
     }
     if ('is' in filter || 'isNot' in filter) {
       const out: Args = {};
-      for (const [op, inner] of Object.entries(filter)) out[op] = inScope(inner);
+      for (const [op, inner] of Object.entries(filter)) {
+        out[op] = op === 'isNot' ? negated(inner) : inScope(inner);
+      }
       return out;
     }
     return inScope(filter) as Args;

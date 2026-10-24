@@ -111,8 +111,10 @@ anunciante). Os papéis de sistema ficam em `src/modules/rbac/constants/roles.ts
   operadora altera ou apaga), filtra relações de lista pra esses modelos em `include`/`select`/`_count`/filtros de
   relação, e recusa o que não dá pra filtrar: include a-um pra modelo escopado, `_count: true`, `orderBy` por relação
   escopada, escrita aninhada (use ids escalares ou o delegate do modelo), criação de raiz, `delete` que cascateia em
-  modelo escopado, SQL cru e acesso sem escopo. Em qualquer modelo, escopado ou não, escrita que põe `workspaceId` ou
-  `organizationId` fora do tenant do escopo dá 403, e o `update` que os grava só alcança linha do próprio tenant.
+  modelo escopado, SQL cru e acesso sem escopo. Filtro de relação negado (`every`, `isNot`) nega "casa ou está fora do
+  escopo", senão a linha de outro tenant satisfaria a negação. Em qualquer modelo, escopado ou não, escrita que põe
+  `workspaceId` ou `organizationId` fora do tenant do escopo dá 403, e o `update` que os grava só alcança linha do
+  próprio tenant.
 - **Modelos com `workspaceId` sem dimensão de cliente** (`Role`, `Permission`, `WorkspaceFeatureFlag`) ficam em
   `WORKSPACE_KEYED_MODELS`, não em `SCOPED_MODELS`: relações a-um chegam neles (`WorkspaceMember.role`,
   `RolePermission.permission`) e cliente e anunciante leem flags e o papel dos membros. No client com escopo:

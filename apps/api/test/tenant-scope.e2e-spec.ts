@@ -730,8 +730,12 @@ describe('Tenant scope (e2e)', () => {
         links: await scoped.client.rolePermission.count({
           where: { role: { workspaceId: workspaceY } },
         }),
+        // Negated, the pin must not turn into "any role outside the own workspace".
+        negated: await scoped.client.permission.findMany({
+          where: { roles: { some: { role: { isNot: { workspaceId: workspaceX } } } } },
+        }),
       }));
-      expect(probe).toEqual({ permissions: [], links: 0 });
+      expect(probe).toEqual({ permissions: [], links: 0, negated: [] });
     });
 
     it('refuses a query naming another workspace, and caches nothing', async () => {
