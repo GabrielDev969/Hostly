@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   BadRequestException,
   NotFoundException,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { WorkspaceMembersRepository } from '@modules/workspaces/repositories/workspace-members.repository.interface';
@@ -34,6 +35,8 @@ export interface WorkspaceRequest extends Request {
 
 @Injectable()
 export class WorkspaceGuard implements CanActivate {
+  private readonly uuid = new ParseUUIDPipe();
+
   constructor(
     private members: WorkspaceMembersRepository,
     private workspaces: WorkspacesRepository,
@@ -44,11 +47,22 @@ export class WorkspaceGuard implements CanActivate {
     const user = req.user;
     if (!user) return false;
 
-    const rawWorkspaceId = req.headers['x-workspace-id'] || req.params['workspaceId'];
+    const header = req.headers['x-workspace-id'];
+    const param = req.params['workspaceId'];
 
-    const workspaceId = Array.isArray(rawWorkspaceId) ? rawWorkspaceId[0] : rawWorkspaceId;
+    // Refused before any membership lookup, so the answer is the same whoever the caller belongs to.
+    if (header && param && header !== param) {
+      throw new BadRequestException('x-workspace-id does not match the workspace in the URL');
+    }
 
-    if (!workspaceId) throw new BadRequestException('Workspace not specified');
+    const rawWorkspaceId = header || param;
+    if (!rawWorkspaceId) throw new BadRequestException('Workspace not specified');
+
+    // Node joins a repeated header into "A, B"; anything but a single UUID is refused.
+    if (Array.isArray(rawWorkspaceId)) {
+      throw new BadRequestException('x-workspace-id must be a single UUID');
+    }
+    const workspaceId = await this.uuid.transform(rawWorkspaceId, { type: 'custom' });
 
     const direct = await this.members.findByUserAndWorkspace(user.id, workspaceId);
     const member = direct ?? (await this.members.findSuperAdminMembership(user.id));
