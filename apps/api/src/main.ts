@@ -10,6 +10,7 @@ import { corsOrigins } from './config/cors.config';
 import { WsAdapter } from '@nestjs/platform-ws';
 import { SwaggerModule } from '@nestjs/swagger';
 import { buildOpenApiDocument, configureRouting } from './config/openapi.config';
+import { configureBodyParsers } from './config/body-parser.config';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -27,6 +28,7 @@ async function bootstrap() {
     origin: corsOrigins,
     credentials: true,
   });
+  configureBodyParsers(app);
 
   app.useGlobalPipes(
     new ValidationPipe({

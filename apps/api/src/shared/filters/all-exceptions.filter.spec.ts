@@ -160,6 +160,38 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
+  it('keeps the 4xx status of an http-errors error without echoing its message', () => {
+    const { host, status, json } = buildHost();
+    const exception = Object.assign(
+      new SyntaxError('Unexpected token, "secret" is not valid JSON'),
+      {
+        status: 415,
+        expose: true,
+        type: 'encoding.unsupported',
+      },
+    );
+
+    filter.catch(exception, host);
+
+    expect(status).toHaveBeenCalledWith(415);
+    const body = json.mock.calls[0][0] as Record<string, unknown>;
+    expect(body).toMatchObject({
+      statusCode: 415,
+      error: 'Unsupported Media Type',
+      message: 'Unsupported Media Type',
+    });
+    expect(body.message).not.toContain('secret');
+  });
+
+  it('treats an unexposed http-errors error as unknown', () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { host, status } = buildHost();
+
+    filter.catch(Object.assign(new Error('internal'), { status: 400, expose: false }), host);
+
+    expect(status).toHaveBeenCalledWith(500);
+  });
+
   it('maps unknown Prisma error codes to a generic 500 database error', () => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const { host, status, json } = buildHost();
